@@ -26,8 +26,32 @@
         #view-tools .view-active { background: #00e5ff; color: #0b0f19; border-color: #00e5ff; }
         #properties { width: 310px; background: #131b2e; border-left: 1px solid #1f2d4a; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; font-size: 0.8rem; }
         #properties h3 { color: #00e5ff; font-size: 0.9rem; border-bottom: 1px solid #1f2d4a; padding-bottom: 6px; }
-        .prop-group { display: flex; flex-direction: column; gap: 3px; }
-        .prop-group label { font-size: 0.7rem; color: #88a0c0; }
+        .prop-group { display: flex; flex-direction: column; gap: 3px; position: relative; }
+        .prop-group label { font-size: 0.70rem; color: #00e5ff; font-weight: 500; cursor: help; }
+        .prop-group label::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: 105%;
+            left: 0;
+            background: #1c2841;
+            color: #00ffaa;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 0.72rem;
+            white-space: pre-wrap;
+            width: 240px;
+            z-index: 100;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            border: 1px solid #00e5ff;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.2s, visibility 0.2s;
+            pointer-events: none;
+        }
+        .prop-group label:hover::after {
+            opacity: 1;
+            visibility: visible;
+        }
         .prop-group input, .prop-group select { background: #1f2d4a; border: 1px solid #2a3f6d; color: #fff; padding: 3px 6px; border-radius: 4px; font-size: 0.75rem; width: 100%; }
         .prop-row { display: flex; gap: 6px; flex-wrap: wrap; }
         .prop-row .prop-group { flex: 1; }
@@ -42,12 +66,202 @@
         #progressBarTrack { width: 100%; height: 6px; background: #1f2d4a; border-radius: 3px; overflow: hidden; margin-top: 6px; }
         #progressBarFill { width: 0%; height: 100%; background: #00ffcc; transition: width 0.1s ease; }
         #progressStatusText { font-size: 0.7rem; color: #00e5ff; display: flex; justify-content: space-between; }
+        
+        /* Стили для полноэкранного модального окна справки */
+        #helpModal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(7, 10, 17, 0.9);
+            backdrop-filter: blur(8px);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+            padding: 40px;
+        }
+        #helpModal.active { display: flex; }
+        .help-modal-content {
+            background: #131b2e;
+            border: 1px solid #00e5ff;
+            border-radius: 12px;
+            width: 100%;
+            max-width: 900px;
+            height: 85vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 10px 40px rgba(0, 229, 255, 0.2);
+            overflow: hidden;
+        }
+        .help-modal-header {
+            background: #101726;
+            padding: 18px 24px;
+            border-bottom: 1px solid #1f2d4a;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .help-modal-header h2 {
+            color: #00e5ff;
+            font-size: 1.2rem;
+        }
+        .help-close-btn {
+            background: #ff3366;
+            color: #fff;
+            border: none;
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 0.85rem;
+        }
+        .help-close-btn:hover { background: #ff5588; }
+        .help-modal-body {
+            padding: 30px;
+            overflow-y: auto;
+            color: #c0d0e0;
+            font-size: 0.9rem;
+            line-height: 1.6;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .help-section {
+            background: #101726;
+            border: 1px solid #1f2d4a;
+            border-radius: 8px;
+            padding: 18px;
+        }
+        .help-section h3 {
+            color: #00ffaa;
+            font-size: 1rem;
+            margin-bottom: 10px;
+            border-bottom: 1px solid #1f2d4a;
+            padding-bottom: 6px;
+        }
+        .help-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 8px;
+        }
+        .help-table th, .help-table td {
+            border: 1px solid #1f2d4a;
+            padding: 8px 12px;
+            text-align: left;
+            font-size: 0.82rem;
+        }
+        .help-table th {
+            background: #182238;
+            color: #00e5ff;
+        }
+        .help-table td code {
+            background: #0d121d;
+            color: #00ffaa;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+        }
     </style>
 </head>
 <body>
 <div id="app">
     <div id="canvasContainer">
         <canvas id="renderCanvas"></canvas>
+        
+        <!-- Кнопка открытия полноэкранного руководства -->
+        <button id="openHelpBtn" style="position: absolute; top: 15px; right: 15px; z-index: 1000; background: rgba(16, 23, 38, 0.95); color: #00e5ff; border: 1px solid #00e5ff; padding: 8px 16px; border-radius: 8px; font-weight: bold; cursor: pointer; backdrop-filter: blur(6px); box-shadow: 0 4px 20px rgba(0,0,0,0.6);">📖 Инструкция и справка</button>
+
+        <!-- Полноэкранное модальное окно справки -->
+        <div id="helpModal">
+            <div class="help-modal-content">
+                <div class="help-modal-header">
+                    <h2>📚 Подробное руководство пользователя — Конструктор GIDEON</h2>
+                    <button class="help-close-btn" id="closeHelpBtn">✕ Закрыть</button>
+                </div>
+                <div class="help-modal-body">
+                    
+                    <div class="help-section">
+                        <h3>1. Навигация в трехмерном пространстве (Камера и Виды)</h3>
+                        <p>Для удобного проектирования топологических схем Сфирали используются следующие элементы управления камерой:</p>
+                        <table class="help-table">
+                            <tr>
+                                <th>Действие / Клавиша</th>
+                                <th>Назначение и эффект</th>
+                            </tr>
+                            <tr>
+                                <td><code>Ctrl + Правая кнопка мыши (ПКМ)</code></td>
+                                <td>Вращение камеры по орбите вокруг центра сцены (в отличие от визуализатора, здесь задействован модификатор Ctrl во избежание конфликтов с выделением).</td>
+                            </tr>
+                            <tr>
+                                <td><code>Колесо мыши (Зум)</code></td>
+                                <td>Приближение и отдаление точки обзора (масштабирование).</td>
+                            </tr>
+                            <tr>
+                                <td><code>Переключатели вида (Перспектива / Сверху / Спереди / Сбоку)</code></td>
+                                <td>Расположены на панели инструментов. Позволяют мгновенно переключаться между проекциями для точного выравнивания узлов.</td>
+                            </tr>
+                        </table>
+                    </div>
+
+                    <div class="help-section">
+                        <h3>2. Выделение элементов и работа с группами</h3>
+                        <p>Интерфейс конструктора поддерживает два основных режима выбора элементов для дальнейшего редактирования:</p>
+                        <table class="help-table">
+                            <tr>
+                                <th>Способ выбора</th>
+                                <th>Описание</th>
+                            </tr>
+                            <tr>
+                                <td><code>ЛКМ (Левая кнопка мыши) + Протягивание</code></td>
+                                <td>Создает прямоугольную рамку выделения прямо на холсте. Все узлы и связи, попавшие внутрь рамки, объединяются в единую группу для массовой правки.</td>
+                            </tr>
+                            <tr>
+                                <td><code>Shift + Клик</code></td>
+                                <td>Позволяет осуществлять точечный множественный выбор отдельных узлов, добавляя их к текущей группе.</td>
+                            </tr>
+                        </table>
+                    </div>
+
+                    <div class="help-section">
+                        <h3>3. Инструменты правой панели (Свойства, Фрактализация и Группы)</h3>
+                        <p>Правая боковая панель содержит блоки для индивидуальных свойств узлов, а также отдельные колонки/секции для работы с группами выделенных объектов:</p>
+                        <table class="help-table">
+                            <tr>
+                                <th>Блок панели</th>
+                                <th>Параметры и функционал</th>
+                            </tr>
+                            <tr>
+                                <td><b>Свойства и элементы</b></td>
+                                <td>Верхняя зона панели. Отображает детальную информацию и параметры выбранного в данный момент отдельного узла или элемента цепи.</td>
+                            </tr>
+                            <tr>
+                                <td><b>Фрактализация по шаблону</b></td>
+                                <td>Поле <code>Глубина (Level)</code> (от 1 до 4) задает допустимый уровень вложенности. Кнопка <b>«Запечь фрактальные диполи»</b> автоматически генерирует разветвленные диполи на основе топологии Сфирали.</td>
+                            </tr>
+                            <tr>
+                                <td><b>Плавное сжатие выделенного</b></td>
+                                <td>Позволяет плавно масштабировать выделенные объекты с шагом в 1%. Кнопка <b>«Сжать -1%»</b> уменьшает габариты сборки.</td>
+                            </tr>
+                            <tr>
+                                <td><b>Целевая позиция центра (XYZ)</b></td>
+                                <td>Три числовых поля ввода (X, Y, Z) и кнопка <b>«Переместить в точку»</b>. Служат для точного перемещения центра всей группы в заданные координаты пространства.</td>
+                            </tr>
+                            <tr>
+                                <td><b>Поворот группы (°)</b></td>
+                                <td>Три поля ввода для углов (в градусах) по осям X, Y и Z. Кнопка <b>«Применить»</b> осуществляет вращение выделенной сборки элементов вокруг собственного центра.</td>
+                            </tr>
+                        </table>
+                    </div>
+
+                    <div class="help-section">
+                        <h3>4. Топологические основы Сфирали</h3>
+                        <p>• <b>Зеркальная антисимметрия:</b> Устройства состоят из левого и правого витков, обладающих разной хиральностью. В сборе система имеет нулевую хиральность целого.<br>
+                        • <b>S-переход:</b> Зона плавной ламинарной деформации, в которой происходит инверсия хиральности без разрыва потока сигнала.</p>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
         <div id="selectionRect"></div>
         <div id="progressBarContainer">
             <div id="progressStatusText">
@@ -89,18 +303,18 @@
         <div id="propContent" class="empty">Выберите узел или элемент</div>
         <hr style="border-color:#1f2d4a; margin:6px 0;">
         <div class="prop-group">
-            <label style="color:#00ffaa; font-weight:bold;">✨ Фрактализация по шаблону</label>
+            <label style="color:#00ffaa; font-weight:bold;" data-tooltip="Автоматически запекает разветвленные диполи (до 4-го уровня) по шаблону Сфирали.">✨ Фрактализация по шаблону ℹ️</label>
             <div class="prop-row" style="margin-top:4px;">
                 <div class="prop-group" style="flex:1;">
-                    <label>Глубина (Level):</label>
-                    <input type="number" id="fractalDepthInput" value="3" min="1" max="6" step="1" />
+                    <label data-tooltip="Уровень вложенности фрактала (от 1 до 4).">Глубина (Level):</label>
+                    <input type="number" id="fractalDepthInput" value="3" min="1" max="4" step="1" />
                 </div>
             </div>
             <button id="applyGlobalFractalBtn" style="margin-top:6px; background:#00ffcc; color:#0b0f19; border:none; padding:6px; border-radius:4px; cursor:pointer; font-weight:bold;">🚀 Запечь фрактальные диполи</button>
         </div>
         <hr style="border-color:#1f2d4a; margin:6px 0;">
         <div class="prop-group">
-            <label>Плавное сжатие выделенного (Шаг 1%)</label>
+            <label data-tooltip="Плавное уменьшение масштаба всех выбранных или активных элементов сборки с шагом в 1%.">Плавное сжатие выделенного (Шаг 1%) ℹ️</label>
             <div class="prop-row">
                 <input type="number" id="scalePercentInput" value="99" min="1" max="100" step="1" style="width:70px;" />
                 <button id="applyScalePercentBtn" style="background:#ffaa00;color:#0b0f19;border:none;padding:4px 6px;border-radius:4px;cursor:pointer;font-size:0.7rem;font-weight:bold;">Сжать -1%</button>
@@ -108,7 +322,7 @@
         </div>
         <hr style="border-color:#1f2d4a; margin:6px 0;">
         <div class="prop-group">
-            <label>Целевая позиция центра (XYZ)</label>
+            <label data-tooltip="Точное перемещение центра выбранной группы объектов в пространстве по осям X, Y и Z.">Целевая позиция центра (XYZ) ℹ️</label>
             <div class="prop-row">
                 <input type="number" id="groupMoveX" value="0" step="10" style="width:50px;" placeholder="X" />
                 <input type="number" id="groupMoveY" value="0" step="10" style="width:50px;" placeholder="Y" />
@@ -118,7 +332,7 @@
         </div>
         <hr style="border-color:#1f2d4a; margin:6px 0;">
         <div class="prop-group">
-            <label>Поворот группы °</label>
+            <label data-tooltip="Вращение всей выделенной сборки элементов на заданный угол (в градусах) вокруг осей X, Y и Z.">Поворот группы ° ℹ️</label>
             <div class="prop-row">
                 <input type="number" id="groupRotX" value="0" step="5" style="width:60px;" />
                 <input type="number" id="groupRotY" value="0" step="5" style="width:60px;" />
@@ -128,6 +342,21 @@
         </div>
     </div>
 </div>
+
+<!-- Скрипт управления полноэкранным окном помощи -->
+<script>
+    document.getElementById('openHelpBtn').addEventListener('click', () => {
+        document.getElementById('helpModal').classList.add('active');
+    });
+    document.getElementById('closeHelpBtn').addEventListener('click', () => {
+        document.getElementById('helpModal').classList.remove('active');
+    });
+    document.getElementById('helpModal').addEventListener('click', (e) => {
+        if (e.target === document.getElementById('helpModal')) {
+            document.getElementById('helpModal').classList.remove('active');
+        }
+    });
+</script>
 
 <script type="module" src="./editor/editor.js"></script>
 </body>
