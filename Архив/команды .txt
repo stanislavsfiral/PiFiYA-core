@@ -1,3 +1,0 @@
-cd C:\gideon-core
-python sfiral_server.py
-http://localhost:8000/
