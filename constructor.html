@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>GIDEON — Квантово-оптический терминал Сфирали</title>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.module.js",
+                "three/examples/jsm/controls/OrbitControls.js": "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/controls/OrbitControls.js"
+            }
+        }
+    </script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background: #0b0f19; color: #f0f4f8; font-family: 'Segoe UI', sans-serif; overflow: hidden; height: 100vh; }
+        #app { display: flex; height: 100vh; }
+        #canvasContainer { flex: 1; position: relative; background: #0b0f19; overflow: hidden; }
+        #canvasContainer canvas { display: block; width: 100%; height: 100%; }
+        #toolbar { position: absolute; top: 10px; left: 10px; background: rgba(16,23,38,0.9); border: 1px solid #1f2d4a; border-radius: 8px; padding: 8px 12px; display: flex; flex-wrap: wrap; gap: 6px; backdrop-filter: blur(4px); z-index: 10; pointer-events: none; }
+        #toolbar button { pointer-events: auto; background: #1f2d4a; border: 1px solid #2a3f6d; color: #fff; padding: 4px 10px; border-radius: 4px; font-size: 0.75rem; cursor: pointer; }
+        #toolbar button:hover { background: #00e5ff; color: #0b0f19; }
+        #view-tools { display: flex; gap: 4px; border-left: 1px solid #2a3f6d; padding-left: 6px; margin-left: 4px; }
+        #view-tools button { background: #1f2d4a; border: 1px solid #2a3f6d; color: #88a0c0; padding: 2px 8px; font-size: 0.7rem; }
+        #view-tools button:hover { background: #00e5ff; color: #0b0f19; }
+        #view-tools .view-active { background: #00e5ff; color: #0b0f19; border-color: #00e5ff; }
+        #properties { width: 310px; background: #131b2e; border-left: 1px solid #1f2d4a; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; font-size: 0.8rem; }
+        #properties h3 { color: #00e5ff; font-size: 0.9rem; border-bottom: 1px solid #1f2d4a; padding-bottom: 6px; }
+        .prop-group { display: flex; flex-direction: column; gap: 3px; }
+        .prop-group label { font-size: 0.7rem; color: #88a0c0; }
+        .prop-group input, .prop-group select { background: #1f2d4a; border: 1px solid #2a3f6d; color: #fff; padding: 3px 6px; border-radius: 4px; font-size: 0.75rem; width: 100%; }
+        .prop-row { display: flex; gap: 6px; flex-wrap: wrap; }
+        .prop-row .prop-group { flex: 1; }
+        .empty { color: #88a0c0; font-style: italic; font-size: 0.75rem; }
+        #statsBar { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); background: rgba(16,23,38,0.85); border: 1px solid #1f2d4a; border-radius: 6px; padding: 4px 14px; font-size: 0.7rem; color: #88a0c0; backdrop-filter: blur(4px); display: flex; gap: 20px; z-index: 10; pointer-events: none; }
+        #statsBar span { color: #00ffaa; font-weight: bold; }
+        #console { position: absolute; bottom: 50px; left: 20px; right: 20px; max-height: 180px; background: rgba(13,18,29,0.95); border: 1px solid #1f2d4a; border-radius: 6px; padding: 6px 12px; overflow-y: auto; font-family: monospace; font-size: 0.7rem; color: #00e5ff; z-index: 10; pointer-events: auto; backdrop-filter: blur(4px); display: none; user-select: text; }
+        #console .line { margin-bottom: 2px; }
+        #console .success { color: #00ffaa; }
+        #selectionRect { position: absolute; border: 1px dashed #00ffaa; background: rgba(0,255,170,0.1); pointer-events: none; display: none; z-index: 20; }
+        #progressBarContainer { position: absolute; top: 60px; left: 50%; transform: translateX(-50%); width: 360px; background: rgba(16,23,38,0.95); border: 1px solid #1f2d4a; border-radius: 6px; padding: 10px 14px; z-index: 20; display: none; backdrop-filter: blur(4px); }
+        #progressBarTrack { width: 100%; height: 6px; background: #1f2d4a; border-radius: 3px; overflow: hidden; margin-top: 6px; }
+        #progressBarFill { width: 0%; height: 100%; background: #00ffcc; transition: width 0.1s ease; }
+        #progressStatusText { font-size: 0.7rem; color: #00e5ff; display: flex; justify-content: space-between; }
+    </style>
+</head>
+<body>
+<div id="app">
+    <div id="canvasContainer">
+        <canvas id="renderCanvas"></canvas>
+        <div id="selectionRect"></div>
+        <div id="progressBarContainer">
+            <div id="progressStatusText">
+                <span id="progressLabel">Фрактализация модели...</span>
+                <span id="progressTime">0 сек.</span>
+            </div>
+            <div id="progressBarTrack">
+                <div id="progressBarFill"></div>
+            </div>
+        </div>
+        <div id="toolbar">
+            <a href="index.html" style="text-decoration:none;"><button style="background:#00ffaa; color:#0b0f19; font-weight:bold;">◀ Назад</button></a>
+            <button id="addNodeBtn">➕</button>
+            <button id="copyGroupBtn">📋 Копировать</button>
+            <button id="connectBtn">🔗 Соединить</button>
+            <button id="deleteBtn">🗑️ Удалить</button>
+            <button id="toggleWalshBtn" style="background:#2d1f4a; color:#ff00ff; border:1px solid #ff00ff; font-weight:bold;">🌀 Троичный Уолш (X,Y,Z)</button>
+            <button id="simulateBtn" style="background:#00e5ff; color:#0b0f19; font-weight:bold;">✨ Резонанс + Фурье</button>
+            <button id="saveModelBtn">💾 Сохранить</button>
+            <button id="loadModelBtn">📂 Загрузить</button>
+            <input type="file" id="fileInput" style="display:none" accept=".json">
+            <span style="color:#88a0c0;font-size:0.6rem; align-self:center;">Shift+клик — выделение</span>
+            <div id="view-tools">
+                <button data-view="perspective" class="view-active">Перспектива</button>
+                <button data-view="top">Сверху</button>
+                <button data-view="front">Спереди</button>
+                <button data-view="side">Сбоку</button>
+            </div>
+        </div>
+        <div id="statsBar">
+            <span id="nodeCount">Узлов: 0</span>
+            <span id="edgeCount">Хроноквантов: 0</span>
+            <span id="paramCount">Параметров: 0</span>
+        </div>
+        <div id="console"></div>
+    </div>
+    <div id="properties">
+        <h3>📐 Свойства и Элементы</h3>
+        <div id="propContent" class="empty">Выберите узел или элемент</div>
+        <hr style="border-color:#1f2d4a; margin:6px 0;">
+        <div class="prop-group">
+            <label style="color:#00ffaa; font-weight:bold;">✨ Фрактализация по шаблону</label>
+            <div class="prop-row" style="margin-top:4px;">
+                <div class="prop-group" style="flex:1;">
+                    <label>Глубина (Level):</label>
+                    <input type="number" id="fractalDepthInput" value="3" min="1" max="6" step="1" />
+                </div>
+            </div>
+            <button id="applyGlobalFractalBtn" style="margin-top:6px; background:#00ffcc; color:#0b0f19; border:none; padding:6px; border-radius:4px; cursor:pointer; font-weight:bold;">🚀 Запечь фрактальные диполи</button>
+        </div>
+        <hr style="border-color:#1f2d4a; margin:6px 0;">
+        <div class="prop-group">
+            <label>Плавное сжатие выделенного (Шаг 1%)</label>
+            <div class="prop-row">
+                <input type="number" id="scalePercentInput" value="99" min="1" max="100" step="1" style="width:70px;" />
+                <button id="applyScalePercentBtn" style="background:#ffaa00;color:#0b0f19;border:none;padding:4px 6px;border-radius:4px;cursor:pointer;font-size:0.7rem;font-weight:bold;">Сжать -1%</button>
+            </div>
+        </div>
+        <hr style="border-color:#1f2d4a; margin:6px 0;">
+        <div class="prop-group">
+            <label>Целевая позиция центра (XYZ)</label>
+            <div class="prop-row">
+                <input type="number" id="groupMoveX" value="0" step="10" style="width:50px;" placeholder="X" />
+                <input type="number" id="groupMoveY" value="0" step="10" style="width:50px;" placeholder="Y" />
+                <input type="number" id="groupMoveZ" value="0" step="10" style="width:50px;" placeholder="Z" />
+            </div>
+            <button id="applyGroupMoveBtn" style="margin-top:2px;background:#00e5ff;color:#0b0f19;border:none;padding:3px;border-radius:4px;cursor:pointer;font-size:0.7rem;">Переместить в точку</button>
+        </div>
+        <hr style="border-color:#1f2d4a; margin:6px 0;">
+        <div class="prop-group">
+            <label>Поворот группы °</label>
+            <div class="prop-row">
+                <input type="number" id="groupRotX" value="0" step="5" style="width:60px;" />
+                <input type="number" id="groupRotY" value="0" step="5" style="width:60px;" />
+                <input type="number" id="groupRotZ" value="0" step="5" style="width:60px;" />
+            </div>
+            <button id="applyGroupRotBtn" style="margin-top:2px;background:#00e5ff;color:#0b0f19;border:none;padding:3px;border-radius:4px;cursor:pointer;font-size:0.7rem;">Применить</button>
+        </div>
+    </div>
+</div>
+
+<script type="module" src="./editor/editor.js"></script>
+</body>
+</html>

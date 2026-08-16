@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>GIDEON Core | Сфираль Адамара — Интерактивное Ядро Троичной Логики</title>
+    <!-- Карта импорта для Three.js через ES-модули -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.module.js",
+                "three/examples/jsm/controls/OrbitControls.js": "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/controls/OrbitControls.js"
+            }
+        }
+    </script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background-color: #0b0f19;
+            color: #f0f4f8;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow-x: hidden;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        header {
+            background: #101726;
+            border-bottom: 1px solid #1f2d4a;
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        h1 { font-size: 1.25rem; color: #00e5ff; letter-spacing: 1px; font-weight: 600; }
+        .subtitle { font-size: 0.8rem; color: #88a0c0; }
+        .header-actions { display: flex; gap: 12px; align-items: center; }
+        .nav-btn {
+            background: #00ffaa; color: #0b0f19; padding: 8px 14px; border-radius: 6px;
+            font-size: 0.8rem; font-weight: bold; text-decoration: none; transition: background 0.2s;
+        }
+        .nav-btn:hover { background: #00e5ff; }
+        .main-container { display: flex; flex: 1; padding: 20px; gap: 20px; max-width: 1600px; margin: 0 auto; width: 100%; }
+        .sidebar {
+            width: 340px; background: #131b2e; border: 1px solid #1f2d4a; border-radius: 8px;
+            padding: 20px; display: flex; flex-direction: column; gap: 15px; box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+        }
+        .control-group { display: flex; flex-direction: column; gap: 6px; position: relative; }
+        label { font-size: 0.85rem; color: #00e5ff; font-weight: 500; cursor: help; }
+        label::after {
+            content: attr(data-tooltip); position: absolute; bottom: 105%; left: 0; background: #1c2841;
+            color: #00ffaa; padding: 6px 10px; border-radius: 4px; font-size: 0.75rem; white-space: pre-wrap;
+            width: 280px; z-index: 10; box-shadow: 0 4px 12px rgba(0,0,0,0.5); border: 1px solid #00e5ff;
+            opacity: 0; visibility: hidden; transition: opacity 0.2s, visibility 0.2s; pointer-events: none;
+        }
+        label:hover::after { opacity: 1; visibility: visible; }
+        select, input[type="number"], input[type="range"] {
+            background: #1f2d4a; border: 1px solid #2a3f6d; color: #fff; padding: 8px 12px;
+            border-radius: 6px; font-size: 0.9rem; outline: none; transition: border-color 0.2s;
+        }
+        input[type="range"] { padding: 0; cursor: pointer; }
+        select:focus, input:focus { border-color: #00e5ff; }
+        button {
+            background: #00e5ff; color: #0b0f19; border: none; padding: 10px; border-radius: 6px;
+            font-weight: 600; cursor: pointer; transition: background 0.2s, transform 0.1s; margin-top: 5px;
+        }
+        button:hover { background: #00ffaa; }
+        button:active { transform: scale(0.98); }
+        .btn-secondary { background: #1f2d4a; color: #00e5ff; border: 1px solid #2a3f6d; }
+        .btn-secondary:hover { background: #2a3f6d; color: #fff; }
+        .workspace { flex: 1; display: flex; flex-direction: column; gap: 20px; }
+        .canvas-container {
+            flex: 1; background: #101726; border: 1px solid #1f2d4a; border-radius: 8px;
+            position: relative; min-height: 480px; overflow: hidden; box-shadow: inset 0 0 30px rgba(0,0,0,0.6);
+        }
+        canvas { display: block; width: 100%; height: 100%; }
+        .info-hint-overlay {
+            position: absolute; top: 15px; right: 15px; background: rgba(16, 23, 38, 0.85);
+            border: 1px solid #1f2d4a; padding: 10px 15px; border-radius: 6px; font-size: 0.78rem;
+            color: #88a0c0; pointer-events: none; backdrop-filter: blur(4px); z-index: 5;
+        }
+        .info-hint-overlay span { color: #00e5ff; font-weight: bold; }
+        .scene-label {
+            position: absolute; background: rgba(16, 23, 38, 0.85); border: 1px solid #00e5ff;
+            color: #00ffaa; padding: 4px 8px; border-radius: 4px; font-size: 0.72rem;
+            font-family: monospace; pointer-events: none; transform: translate(-50%, -50%);
+            white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+        }
+        .axis-label {
+            position: absolute; color: #00d2ff; font-size: 0.75rem; font-weight: bold;
+            font-family: monospace; pointer-events: none; transform: translate(-50%, -50%);
+            text-shadow: 0 0 4px rgba(0,210,255,0.6);
+        }
+        .stats-panel {
+            background: #131b2e; border: 1px solid #1f2d4a; border-radius: 8px; padding: 15px 20px;
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px;
+        }
+        .stat-box { background: #101726; border: 1px solid #1a2845; padding: 10px 15px; border-radius: 6px; }
+        .stat-title { font-size: 0.75rem; color: #88a0c0; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .stat-value { font-size: 1rem; color: #00ffaa; font-family: monospace; font-weight: bold; }
+        .console-wrapper { background: #131b2e; border: 1px solid #1f2d4a; border-radius: 8px; overflow: hidden; }
+        .console-header {
+            display: flex; justify-content: space-between; align-items: center; background: #131b2e;
+            padding: 8px 15px; font-size: 0.8rem; color: #88a0c0; border-bottom: 1px solid #1f2d4a;
+        }
+        .console-actions { display: flex; gap: 10px; }
+        .console-action-btn {
+            background: #1f2d4a; border: 1px solid #2a3f6d; color: #00e5ff; padding: 2px 8px;
+            border-radius: 4px; font-size: 0.75rem; cursor: pointer; margin: 0;
+        }
+        .console-action-btn:hover { background: #00e5ff; color: #0b0f19; }
+        .console-panel {
+            background: #0d121d; padding: 12px 15px; font-family: monospace; font-size: 0.78rem;
+            height: 130px; overflow-y: auto; color: #00e5ff; transition: height 0.2s, padding 0.2s;
+        }
+        .console-panel.collapsed { height: 0; padding-top: 0; padding-bottom: 0; border: none; }
+        .console-line { margin-bottom: 4px; line-height: 1.3; }
+        .legend-badge { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+        .badge-thesis { background: #00e5ff; }
+        .badge-antithesis { background: #ff3366; }
+        .badge-center { background: #ffe600; }
+        .badge-t2 { background: #00ff88; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div>
+            <h1>GIDEON CORE ARCHITECTURE</h1>
+            <div class="subtitle">Топологическая система Сфирали • Матрица Адамара • Весы Адама [-1, 0, +1]</div>
+        </div>
+        <div class="header-actions">
+            <a href="constructor.html" class="nav-btn">📐 Конструктор</a>
+            <div style="font-size: 0.85rem; color: #00ffaa; font-family: monospace;" id="statusHeader">STATUS: ACTIVE &bull; Q-ZERO CHIRALITY</div>
+        </div>
+    </header>
+
+    <div class="main-container">
+        <div class="sidebar">
+            <h3 style="font-size: 1rem; color: #fff; border-bottom: 1px solid #1f2d4a; padding-bottom: 8px;">Параметры Ядра</h3>
+            
+            <div class="control-group">
+                <label for="modeSelect" data-tooltip="Выбирает конфигурацию. Сфираль — базовый контур. Диполи с разворотом по осям X/Y/Z — ортогональные перекрестия (Звезда, Кольцо, Вихрь).">Архитектурный Режим ℹ️</label>
+                <select id="modeSelect">
+                    <option value="Single" selected>Сфираль (Базовая)</option>
+                    <option value="Axis X">Диполь с разворотом по оси X (Звезда)</option>
+                    <option value="Axis Y">Диполь с разворотом по оси Y (Кольцо)</option>
+                    <option value="Axis Z">Диполь с разворотом по оси Z (Вихрь)</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label for="harmAxisSelect" data-tooltip="Задает вектор гармонических колебаний поля, определяющий фазовые сдвиги при прохождении через S-переходы.">Ось Гармоник ℹ️</label>
+                <select id="harmAxisSelect">
+                    <option value="Harmonic X">Harmonic X</option>
+                    <option value="Harmonic Y">Harmonic Y</option>
+                    <option value="Harmonic Z" selected>Harmonic Z (Главная ось)</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label for="coresInput" data-tooltip="Количество параллельных логических ядер в системе. Распределяет нагрузку по окружности с угловым шагом 360° / N.">Количество Ядер (N) ℹ️</label>
+                <input type="number" id="coresInput" value="1" min="1" max="12">
+            </div>
+
+            <div class="control-group">
+                <label for="quenchInput" data-tooltip="Скорость изменения параметров (темп квенча). Влияет на расчет плотности дефектов системы по методологии Киблу — Зурека и физически ускоряет динамику шариков.">Темп Квенча (Kibble-Zurek) ℹ️</label>
+                <input type="number" id="quenchInput" value="1.0" min="0.1" max="10.0" step="0.1">
+            </div>
+
+            <div class="control-group">
+                <label for="animSpeedRange" data-tooltip="Тонкий ручной множитель скорости движения сигнальных шариков вдоль витков Сфирали.">Множитель скорости анимации ℹ️</label>
+                <input type="range" id="animSpeedRange" min="0.2" max="3.0" step="0.1" value="1.0">
+            </div>
+
+            <button id="calcBtn">Выполнить расчёт пакетов</button>
+            <button class="btn-secondary" id="loadModelBtn">📁 Загрузить свою модель (.json)</button>
+            <button class="btn-secondary" id="resetModelBtn" style="background:#2a1f2d; color:#ff88ff; border-color:#ff00ff; display:none;">🔄 Сбросить к Сфирали</button>
+            <input type="file" id="modelFileInput" style="display: none;" accept=".json,.txt">
+
+            <div style="margin-top: 10px; font-size: 0.78rem; color: #88a0c0; line-height: 1.4; border-top: 1px solid #1f2d4a; padding-top: 10px;">
+                <p style="color: #00e5ff; font-weight: bold; margin-bottom: 4px;">Справка по элементам:</p>
+                <p><span class="legend-badge badge-thesis"></span>Правый виток (+)</p>
+                <p><span class="legend-badge badge-antithesis"></span>Левый виток (-)</p>
+                <p><span class="legend-badge badge-center"></span>S-образный переход («0» центр)</p>
+                <p><span class="legend-badge badge-t2"></span>Ветвь Т2 / А2</p>
+            </div>
+        </div>
+
+        <div class="workspace">
+            <div class="canvas-container" id="canvasContainer">
+                <canvas id="renderCanvas"></canvas>
+                <div class="info-hint-overlay">
+                    💡 <span>ЛКМ + тянуть</span> — вращать модель<br>
+                    🔍 <span>Колесо мыши</span> — приблизить / отдалить
+                </div>
+                <div id="labelRight" class="scene-label" style="display:none;">Правый виток (+)</div>
+                <div id="labelLeft" class="scene-label" style="display:none;">Левый виток (-)</div>
+                <div id="labelCenter" class="scene-label" style="display:none;">S-образный переход («0»)</div>
+
+                <div id="axisPosX" class="axis-label">+X</div>
+                <div id="axisNegX" class="axis-label">-X</div>
+                <div id="axisPosY" class="axis-label">+Y</div>
+                <div id="axisNegY" class="axis-label">-Y</div>
+                <div id="axisPosZ" class="axis-label">+Z (S-верх)</div>
+                <div id="axisNegZ" class="axis-label">-Z (S-низ)</div>
+            </div>
+
+            <div class="stats-panel">
+                <div class="stat-box">
+                    <div class="stat-title">Весы Адама (Дисбаланс)</div>
+                    <div class="stat-value" id="statDefects">0.0000</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-title">Хиральность системы</div>
+                    <div class="stat-value" id="statChirality">0.0 (Нулевая)</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-title">Угловой шаг (&#916;&phi;)</div>
+                    <div class="stat-value" id="statAngle">360.0°</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-title">Статус Адамар-суперпозиции</div>
+                    <div class="stat-value" id="statHadamard">ОРТОГОНАЛЬНО</div>
+                </div>
+            </div>
+
+            <div class="console-wrapper">
+                <div class="console-header">
+                    <span>Логирование ядра и результатов</span>
+                    <div class="console-actions">
+                        <button class="console-action-btn" id="toggleConsoleBtn">Свернуть 🔼</button>
+                        <button class="console-action-btn" id="clearLogBtn">Очистить лог</button>
+                        <button class="console-action-btn" id="resultOnlyBtn">Только результат</button>
+                    </div>
+                </div>
+                <div class="console-panel" id="consoleLog">
+                    <div class="console-line">[SYSTEM] Базовое ядро GIDEON инициализировано (Сфираль, N=1).</div>
+                    <div class="console-line">[SYSTEM] Универсальный менеджер моделей активирован.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Подключаем главный модульный скрипт -->
+    <script type="module" src="./visualizer/app.js"></script>
+</body>
+</html>
