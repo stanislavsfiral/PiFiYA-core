@@ -272,58 +272,47 @@ transformControls.addEventListener('change', () => {
             }
         }
     } else if (selectedNodes.length > 1) {
-        if (transformControls.mode === 'translate') {
-            const deltaPos = new THREE.Vector3().subVectors(groupTransformProxy.position, lastProxyPosition);
-            lastProxyPosition.copy(groupTransformProxy.position);
-            selectedNodes.forEach(id => {
-                const node = getNode(id);
-                if (node) {
-                    node.x += deltaPos.x;
-                    node.y += deltaPos.y;
-                    node.z += deltaPos.z;
-                    updateNodeVisual(node);
-                }
-            });
-        } else if (transformControls.mode === 'rotate') {
-            const center = groupTransformProxy.position.clone();
-            const groupRotation = groupTransformProxy.rotation.clone();
-            
-            const deltaEuler = new THREE.Euler(
-                groupRotation.x - lastProxyRotation.x,
-                groupRotation.y - lastProxyRotation.y,
-                groupRotation.z - lastProxyRotation.z,
-                'XYZ'
-            );
-            const deltaQuat = new THREE.Quaternion().setFromEuler(deltaEuler);
+        const deltaPos = new THREE.Vector3().subVectors(groupTransformProxy.position, lastProxyPosition);
+        lastProxyPosition.copy(groupTransformProxy.position);
 
-            selectedNodes.forEach(id => {
-                const node = getNode(id);
-                const group = meshMap.get(id);
-                if (!node || !group) return;
+        const groupQuaternion = new THREE.Quaternion().setFromEuler(groupTransformProxy.rotation);
+        const lastGroupQuaternion = new THREE.Quaternion().setFromEuler(lastProxyRotation);
+        const deltaQuat = groupQuaternion.clone().multiply(lastGroupQuaternion.invert());
+        lastProxyRotation.copy(groupTransformProxy.rotation);
 
-                // Вращаем позицию узла вокруг центра группы
+        const center = new THREE.Vector3();
+        selectedNodes.forEach(id => {
+            const n = getNode(id);
+            if (n) center.add(new THREE.Vector3(n.x, n.y, n.z));
+        });
+        center.divideScalar(selectedNodes.length);
+
+        selectedNodes.forEach(id => {
+            const node = getNode(id);
+            const group = meshMap.get(id);
+            if (!node || !group) return;
+
+            if (transformControls.mode === 'translate') {
+                node.x += deltaPos.x;
+                node.y += deltaPos.y;
+                node.z += deltaPos.z;
+            } else if (transformControls.mode === 'rotate') {
                 const v = new THREE.Vector3(node.x, node.y, node.z).sub(center);
                 v.applyQuaternion(deltaQuat);
                 v.add(center);
-                
                 node.x = v.x;
                 node.y = v.y;
                 node.z = v.z;
 
-                // Вращаем сам объект локально вокруг его осей + приращение группы
-                group.rotation.x += deltaEuler.x;
-                group.rotation.y += deltaEuler.y;
-                group.rotation.z += deltaEuler.z;
-                
+                group.rotation.setFromQuaternion(group.quaternion.premultiply(deltaQuat));
                 node.params.angles = [
                     THREE.MathUtils.radToDeg(group.rotation.x),
                     THREE.MathUtils.radToDeg(group.rotation.y),
                     THREE.MathUtils.radToDeg(group.rotation.z)
                 ];
-                updateNodeVisual(node);
-            });
-            lastProxyRotation.copy(groupRotation);
-        }
+            }
+            updateNodeVisual(node);
+        });
         updateEdges();
     }
 });
@@ -1190,31 +1179,6 @@ function applyModalRotationLive() {
             THREE.MathUtils.degToRad(node.params.angles[2])
         );
         updateBottomBarValues(node);
-        updateEdges();
-    } else if (selectedNodes.length > 1) {
-        const center = new THREE.Vector3();
-        selectedNodes.forEach(id => {
-            const n = getNode(id);
-            if (n) center.add(new THREE.Vector3(n.x, n.y, n.z));
-        });
-        center.divideScalar(selectedNodes.length);
-
-        selectedNodes.forEach(id => {
-            const node = getNode(id);
-            const group = meshMap.get(id);
-            if (!node || !group) return;
-
-            if (!isNaN(rx)) node.params.angles[0] = rx;
-            if (!isNaN(ry)) node.params.angles[1] = ry;
-            if (!isNaN(rz)) node.params.angles[2] = rz;
-
-            group.rotation.set(
-                THREE.MathUtils.degToRad(node.params.angles[0]),
-                THREE.MathUtils.degToRad(node.params.angles[1]),
-                THREE.MathUtils.degToRad(node.params.angles[2])
-            );
-            updateNodeVisual(node);
-        });
         updateEdges();
     }
 }
