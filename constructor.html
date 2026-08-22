@@ -27,6 +27,9 @@
             <button id="connectBtn" title="Соединить">🔗</button>
             <button id="deleteBtn" title="Удалить">🗑️</button>
             
+            <!-- Кнопка перемещения объекта/группы в центр (0,0,0) -->
+            <button id="toolCenterBtn" title="Перенести в центр (0,0,0)" style="font-size:0.8rem;">🎯</button>
+            
             <!-- Выпадающее меню для расчётов -->
             <div class="dropdown" style="display:inline-block; position:relative;">
                 <button id="moreBtn" style="background:#2d1f4a; color:#ff00ff; border:1px solid #ff00ff;">⚡</button>
@@ -80,7 +83,7 @@
             </div>
         </div>
 
-        <!-- ====== МОДАЛЬНОЕ ОКНО ПЕРЕМЕЩЕНИЯ ====== -->
+        <!-- ====== МОДАЛЬНОЕ ОКНО ПЕРЕМЕЩЕНИЯ (СБОКУ СВЕРХУ) ====== -->
         <div id="moveDialogModal" class="modal" style="display:none; position:fixed; top:70px; right:70px; width:210px; background:#131b2e; border:1px solid #00e5ff; border-radius:5px; padding:10px 12px; z-index:1000; box-shadow: 0 6px 20px rgba(0,0,0,0.7); color:#f0f4f8; font-size:0.75rem; cursor:move;">
             <div style="font-weight:bold; color:#00e5ff; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #1f2d4a; padding-bottom:4px;">
                 <span>⤩ Перемещение</span>
@@ -93,7 +96,7 @@
             </div>
         </div>
 
-        <!-- ====== МОДАЛЬНОЕ ОКНО ПОВОРОТА ====== -->
+        <!-- ====== МОДАЛЬНОЕ ОКНО ПОВОРОТА (СБОКУ СВЕРХУ) ====== -->
         <div id="rotateDialogModal" class="modal" style="display:none; position:fixed; top:70px; right:70px; width:210px; background:#131b2e; border:1px solid #00e5ff; border-radius:5px; padding:10px 12px; z-index:1000; box-shadow: 0 6px 20px rgba(0,0,0,0.7); color:#f0f4f8; font-size:0.75rem; cursor:move;">
             <div style="font-weight:bold; color:#00e5ff; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #1f2d4a; padding-bottom:4px;">
                 <span>🔄 Поворот группы (°)</span>
@@ -117,8 +120,8 @@
             </div>
         </div>
 
-        <!-- ====== КНОПКА ОТКРЫТИЯ ПАНЕЛИ СВОЙСТВ (Сдвинута выше, чтобы не перекрывать инпуты) ====== -->
-        <button id="togglePropBtn" class="toggle-prop-btn" style="position:absolute; bottom:140px; right:15px; z-index:50; background:#00e5ff; color:#0b0f19; border:none; border-radius:50%; width:44px; height:44px; font-size:1.2rem; font-weight:bold; cursor:pointer; box-shadow:0 4px 16px rgba(0,229,255,0.4);">
+        <!-- ====== КНОПКА ОТКРЫТИЯ ПАНЕЛИ СВОЙСТВ (СМЕЩЕНА ВЫШЕ) ====== -->
+        <button id="togglePropBtn" class="toggle-prop-btn" style="position:absolute; bottom:130px; right:10px; z-index:50; background:#00e5ff; color:#0b0f19; border:none; border-radius:50%; width:48px; height:48px; font-size:1.4rem; font-weight:bold; cursor:pointer; box-shadow:0 4px 16px rgba(0,229,255,0.4);">
             📐
         </button>
 
@@ -130,12 +133,49 @@
         <div id="helpModal">
             <div class="help-modal-content">
                 <div class="help-modal-header">
-                    <h2>📚 Справка</h2>
+                    <h2>📚 Справочник по управлению</h2>
                     <button class="help-close-btn" id="closeHelpBtn">✕</button>
                 </div>
-                <div class="help-modal-body">
-                    <div class="help-section"><h3>Управление</h3><p><kbd>Ctrl+ПКМ</kbd> вращение · <kbd>Колёсико</kbd> масштаб · <kbd>1-4</kbd> виды</p></div>
-                    <div class="help-section"><h3>Горячие клавиши</h3><p><kbd>Ctrl+Z</kbd> отмена · <kbd>Ctrl+C</kbd> копировать · <kbd>Ctrl+V</kbd> вставить · <kbd>Del</kbd> удалить</p></div>
+                <div class="help-modal-body" style="font-size:0.85rem; line-height:1.4;">
+                    <div class="help-section">
+                        <h3>🛠️ Верхняя панель (Инструменты)</h3>
+                        <p>
+                            <b>➕</b> — Добавить новую сфираль на сцену.<br>
+                            <b>📋</b> — Копировать выбранную сфираль или группу в буфер обмена.<br>
+                            <b>🔗</b> — Соединить две выбранные сфирали поляризационной связью.<br>
+                            <b>🗑️</b> — Удалить выбранный объект или подобъект.<br>
+                            <b>🎯</b> — Перенести выбранный объект или центр масс группы в абсолютный ноль <code>(0, 0, 0)</code> сцены.<br>
+                            <b>⚡</b> — Дополнительное меню (пресеты фракталов, экспорт/импорт моделей).
+                        </p>
+                    </div>
+                    <div class="help-section">
+                        <h3>📐 Проекции и Трансформация</h3>
+                        <p>
+                            <b>3D, T (Топ), F (Фронт), S (Сайд)</b> — Быстрое переключение ортографических и перспективных видов камеры.<br>
+                            <b>↕</b> — Режим перемещения (гидрометрия через гизмо или ПКМ для точного ввода координат).<br>
+                            <b>↻</b> — Режим вращения объекта или группы вокруг центра масс.
+                        </p>
+                    </div>
+                    <div class="help-section">
+                        <h3>🖱️ Навигация мышкой</h3>
+                        <p>
+                            • <b>ЛКМ (клик)</b> — Выбор сфирали или отдельной части (витка/петли).<br>
+                            • <b>ЛКМ + Рамка</b> — Выделение группы сфиралей прямоугольным выделением.<br>
+                            • <b>Ctrl + ЛКМ</b> — Добавление объектов к текущему выделению.<br>
+                            • <b>Правая кнопка мыши (ПКМ) + Тянуть</b> — Вращение камеры вокруг сцены.<br>
+                            • <b>Колёсико мыши</b> — Приближение / отдаление сцены.
+                        </p>
+                    </div>
+                    <div class="help-section">
+                        <h3>⌨️ Горячие клавиши</h3>
+                        <p>
+                            • <kbd>Ctrl + C</kbd> / <kbd>Ctrl + V</kbd> — Копирование и вставка выбранной группы.<br>
+                            • <kbd>Delete</kbd> — Удаление выбранного узла.<br>
+                            • <kbd>=</kbd> / <kbd>-</kbd> — Увеличение / уменьшение масштаба выделенного объекта.<br>
+                            • <kbd>]</kbd> / <kbd>[</kbd> — Растяжение / сжатие пружины (ось Z).<br>
+                            • <kbd>Esc</kbd> — Сброс выделения.
+                        </p>
+                    </div>
                 </div>
             </div>
         </div>
@@ -168,9 +208,4 @@
 <script type="module" src="./editor/editor.js"></script>
 </body>
 </html>
-```[cite: 8]
-
----
-
-### 2. Обновленный `editor.js`
-В функции `renderProperties` полностью удален блок параметра «Сжатие по ширине» (`width`), оставлено исключительно **«Сжатие по высоте (%)»**.
+```[cite: 8, 12]

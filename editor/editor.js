@@ -232,7 +232,17 @@ let lastProxyRotation = new THREE.Euler();
 
 transformControls.addEventListener('dragging-changed', (event) => {
     controls.enabled = !event.value;
-    if (event.value && selectedNodes.length > 1) {
+    if (event.value) {
+        if (selectedNodes.length > 1) {
+            let cx = 0, cy = 0, cz = 0;
+            const targetNodes = selectedNodes.map(nid => getNode(nid)).filter(Boolean);
+            targetNodes.forEach(n => { cx += n.x; cy += n.y; cz += n.z; });
+            cx /= targetNodes.length; cy /= targetNodes.length; cz /= targetNodes.length;
+
+            groupTransformProxy.position.set(cx, cy, cz);
+            groupTransformProxy.rotation.set(0, 0, 0);
+            groupTransformProxy.updateMatrixWorld();
+        }
         lastProxyPosition.copy(groupTransformProxy.position);
         lastProxyRotation.copy(groupTransformProxy.rotation);
     }
@@ -272,58 +282,47 @@ transformControls.addEventListener('change', () => {
             }
         }
     } else if (selectedNodes.length > 1) {
-        if (transformControls.mode === 'translate') {
-            const deltaPos = new THREE.Vector3().subVectors(groupTransformProxy.position, lastProxyPosition);
-            lastProxyPosition.copy(groupTransformProxy.position);
-            selectedNodes.forEach(id => {
-                const node = getNode(id);
-                if (node) {
-                    node.x += deltaPos.x;
-                    node.y += deltaPos.y;
-                    node.z += deltaPos.z;
-                    updateNodeVisual(node);
-                }
-            });
-        } else if (transformControls.mode === 'rotate') {
-            const center = groupTransformProxy.position.clone();
-            const groupRotation = groupTransformProxy.rotation.clone();
-            
-            const deltaEuler = new THREE.Euler(
-                groupRotation.x - lastProxyRotation.x,
-                groupRotation.y - lastProxyRotation.y,
-                groupRotation.z - lastProxyRotation.z,
-                'XYZ'
-            );
-            const deltaQuat = new THREE.Quaternion().setFromEuler(deltaEuler);
+        const deltaPos = new THREE.Vector3().subVectors(groupTransformProxy.position, lastProxyPosition);
+        lastProxyPosition.copy(groupTransformProxy.position);
 
-            selectedNodes.forEach(id => {
-                const node = getNode(id);
-                const group = meshMap.get(id);
-                if (!node || !group) return;
+        const groupQuaternion = new THREE.Quaternion().setFromEuler(groupTransformProxy.rotation);
+        const lastGroupQuaternion = new THREE.Quaternion().setFromEuler(lastProxyRotation);
+        const deltaQuat = groupQuaternion.clone().multiply(lastGroupQuaternion.invert());
+        lastProxyRotation.copy(groupTransformProxy.rotation);
 
-                // Вращаем позицию узла вокруг центра группы
+        const center = new THREE.Vector3();
+        selectedNodes.forEach(id => {
+            const n = getNode(id);
+            if (n) center.add(new THREE.Vector3(n.x, n.y, n.z));
+        });
+        center.divideScalar(selectedNodes.length);
+
+        selectedNodes.forEach(id => {
+            const node = getNode(id);
+            const group = meshMap.get(id);
+            if (!node || !group) return;
+
+            if (transformControls.mode === 'translate') {
+                node.x += deltaPos.x;
+                node.y += deltaPos.y;
+                node.z += deltaPos.z;
+            } else if (transformControls.mode === 'rotate') {
                 const v = new THREE.Vector3(node.x, node.y, node.z).sub(center);
                 v.applyQuaternion(deltaQuat);
                 v.add(center);
-                
                 node.x = v.x;
                 node.y = v.y;
                 node.z = v.z;
 
-                // Вращаем сам объект локально вокруг его осей + приращение группы
-                group.rotation.x += deltaEuler.x;
-                group.rotation.y += deltaEuler.y;
-                group.rotation.z += deltaEuler.z;
-                
+                group.rotation.setFromQuaternion(group.quaternion.premultiply(deltaQuat));
                 node.params.angles = [
                     THREE.MathUtils.radToDeg(group.rotation.x),
                     THREE.MathUtils.radToDeg(group.rotation.y),
                     THREE.MathUtils.radToDeg(group.rotation.z)
                 ];
-                updateNodeVisual(node);
-            });
-            lastProxyRotation.copy(groupRotation);
-        }
+            }
+            updateNodeVisual(node);
+        });
         updateEdges();
     }
 });
@@ -631,14 +630,47 @@ function updateSelectionHighlights() {
 
         groupTransformProxy.position.set(cx, cy, cz);
         groupTransformProxy.rotation.set(0, 0, 0);
-        transformControls.attach(groupTransformProxy);
+        groupTransformProxy.updateMatrixWorld();
+
         lastProxyPosition.copy(groupTransformProxy.position);
         lastProxyRotation.copy(groupTransformProxy.rotation);
+
+        transformControls.attach(groupTransformProxy);
         updateBottomBarValues(null);
     } else {
         transformControls.detach();
         updateBottomBarValues(null);
     }
+}
+
+// Функция центрирования выбранных объектов или одиночной сфирали в (0,0,0)
+function centerSelectedToOrigin() {
+    if (selectedNodes.length === 0) {
+        alert('Выберите сфираль или группу для переноса в центр');
+        return;
+    }
+    saveState();
+
+    let cx = 0, cy = 0, cz = 0;
+    const targetNodes = selectedNodes.map(nid => getNode(nid)).filter(Boolean);
+    if (targetNodes.length === 0) return;
+
+    targetNodes.forEach(n => { cx += n.x; cy += n.y; cz += n.z; });
+    cx /= targetNodes.length; 
+    cy /= targetNodes.length; 
+    cz /= targetNodes.length;
+
+    // Сдвигаем объекты так, чтобы их центр масс оказался в точке (0, 0, 0)
+    targetNodes.forEach(node => {
+        node.x -= cx;
+        node.y -= cy;
+        node.z -= cz;
+        updateNodeVisual(node);
+    });
+
+    updateEdges();
+    updateSelectionHighlights();
+    sendDataToPythonCore();
 }
 
 function getObjectUnderMouse(clientX, clientY) {
@@ -695,7 +727,7 @@ function switchView(view) {
 }
 
 // ============================================================
-// 8. БУФЕР ОБМЕНА И СОХРАНЕНИЕ / ЗАГРУЗКА
+// 8. БУФЕР ОБМЕНА (КОПИРОВАНИЕ И ВСТАВКА)
 // ============================================================
 function saveState() {
     const state = {
@@ -782,59 +814,6 @@ function pasteClipboard() {
     sendDataToPythonCore();
 }
 
-function saveModel() {
-    const modelData = {
-        version: "1.0",
-        nodes: graph.nodes,
-        edges: graph.edges,
-        nextId: nextId
-    };
-    
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(modelData, null, 2));
-    const downloadAnchor = document.createElement('a');
-    downloadAnchor.setAttribute("href", dataStr);
-    downloadAnchor.setAttribute("download", "sfiral_model.json");
-    document.body.appendChild(downloadAnchor);
-    downloadAnchor.click();
-    downloadAnchor.remove();
-}
-
-function loadModel(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = function(event) {
-        try {
-            const data = JSON.parse(event.target.result);
-            if (!data.nodes || !data.edges) {
-                alert('Ошибка: неверный формат файла модели.');
-                return;
-            }
-
-            saveState();
-            graph.nodes = data.nodes;
-            graph.edges = data.edges;
-            nextId = data.nextId || (Math.max(...graph.nodes.map(n => n.id), 0) + 1);
-
-            selectedNodes = [];
-            selectedPart = null;
-            
-            updateAllNodes();
-            sendDataToPythonCore();
-            alert('Модель успешно загружена!');
-        } catch (err) {
-            console.error(err);
-            alert('Ошибка при чтении файла JSON.');
-        }
-        e.target.value = '';
-    };
-    reader.readAsText(file);
-}
-
-// ============================================================
-// ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ СИНХРОННОГО МАСШТАБИРОВАНИЯ И ПРУЖИНЫ
-// ============================================================
 function applyScaleAndStretchToNodes(nodeIds, newScale, newStretch) {
     saveState();
     const targetNodes = nodeIds.map(nid => getNode(nid)).filter(Boolean);
@@ -846,16 +825,24 @@ function applyScaleAndStretchToNodes(nodeIds, newScale, newStretch) {
     cy /= targetNodes.length; 
     cz /= targetNodes.length;
 
+    const sampleNode = targetNodes[0];
+    const oldScale = sampleNode.params.scale ?? 1.0;
+    const oldStretch = sampleNode.params.stretch ?? 1.0;
+
     targetNodes.forEach(node => {
-        const oldStretch = node.params.stretch ?? 1.0;
-        
-        if (newScale !== undefined) node.params.scale = newScale;
-        if (newStretch !== undefined) node.params.stretch = newStretch;
+        if (newScale !== undefined && oldScale > 0) {
+            const scaleRatio = newScale / oldScale;
+            node.x = cx + (node.x - cx) * scaleRatio;
+            node.y = cy + (node.y - cy) * scaleRatio;
+            node.z = cz + (node.z - cz) * scaleRatio;
+            node.params.scale = newScale;
+        }
 
         if (newStretch !== undefined && oldStretch > 0) {
             const stretchRatio = newStretch / oldStretch;
             const relativeZ = node.z - cz;
             node.z = cz + relativeZ * stretchRatio;
+            node.params.stretch = newStretch;
         }
 
         updateNodeVisual(node);
@@ -878,6 +865,7 @@ class UIManager {
     bindExistingToolButtons() {
         const transBtn = document.getElementById('toolTranslateBtn');
         const rotBtn = document.getElementById('toolRotateBtn');
+        const centerBtn = document.getElementById('toolCenterBtn'); // Кнопка "В центр"
 
         if (transBtn) {
             transBtn.classList.add('active');
@@ -901,6 +889,12 @@ class UIManager {
                 e.preventDefault();
                 if (selectedNodes.length === 0) { alert('Выберите сфираль или группу'); return; }
                 openRotateDialog();
+            });
+        }
+
+        if (centerBtn) {
+            centerBtn.addEventListener('click', () => {
+                centerSelectedToOrigin();
             });
         }
     }
@@ -1142,7 +1136,7 @@ class UIManager {
 }
 
 // ============================================================
-// 10. ОБРАБОТЧИКИ ДЕЙСТВИЙ
+// 10. ОБРАБОТЧИКИ ДЕЙСТВИЙ (И ЖИВОЙ ВВОД ДЛЯ ГРУПП И ОДИНОЧНЫХ)
 // ============================================================
 function updateBottomBarValues(node) {
     if (!node) return;
@@ -1167,6 +1161,29 @@ function applyModalPositionLive() {
         updateNodeVisual(node);
         updateBottomBarValues(node);
         updateEdges();
+    } else {
+        let cx = 0, cy = 0, cz = 0;
+        const targetNodes = selectedNodes.map(nid => getNode(nid)).filter(Boolean);
+        targetNodes.forEach(n => { cx += n.x; cy += n.y; cz += n.z; });
+        cx /= targetNodes.length; cy /= targetNodes.length; cz /= targetNodes.length;
+
+        const targetX = !isNaN(px) ? px : cx;
+        const targetY = !isNaN(py) ? py : cy;
+        const targetZ = !isNaN(pz) ? pz : cz;
+
+        const dx = targetX - cx;
+        const dy = targetY - cy;
+        const dz = targetZ - cz;
+
+        if (dx !== 0 || dy !== 0 || dz !== 0) {
+            targetNodes.forEach(node => {
+                node.x += dx;
+                node.y += dy;
+                node.z += dz;
+                updateNodeVisual(node);
+            });
+            updateEdges();
+        }
     }
 }
 
@@ -1191,28 +1208,41 @@ function applyModalRotationLive() {
         );
         updateBottomBarValues(node);
         updateEdges();
-    } else if (selectedNodes.length > 1) {
-        const center = new THREE.Vector3();
-        selectedNodes.forEach(id => {
-            const n = getNode(id);
-            if (n) center.add(new THREE.Vector3(n.x, n.y, n.z));
-        });
-        center.divideScalar(selectedNodes.length);
+    } else {
+        let cx = 0, cy = 0, cz = 0;
+        const targetNodes = selectedNodes.map(nid => getNode(nid)).filter(Boolean);
+        targetNodes.forEach(n => { cx += n.x; cy += n.y; cz += n.z; });
+        cx /= targetNodes.length; cy /= targetNodes.length; cz /= targetNodes.length;
 
-        selectedNodes.forEach(id => {
-            const node = getNode(id);
-            const group = meshMap.get(id);
-            if (!node || !group) return;
+        const firstNode = targetNodes[0];
+        const curRot = firstNode.params.angles || [0, 0, 0];
+        
+        const targetRx = !isNaN(rx) ? rx : curRot[0];
+        const targetRy = !isNaN(ry) ? ry : curRot[1];
+        const targetZ = !isNaN(rz) ? rz : curRot[2];
 
-            if (!isNaN(rx)) node.params.angles[0] = rx;
-            if (!isNaN(ry)) node.params.angles[1] = ry;
-            if (!isNaN(rz)) node.params.angles[2] = rz;
+        const deltaX = THREE.MathUtils.degToRad(targetRx - curRot[0]);
+        const deltaY = THREE.MathUtils.degToRad(targetRy - curRot[1]);
+        const deltaZ = THREE.MathUtils.degToRad(targetZ - curRot[2]);
 
-            group.rotation.set(
-                THREE.MathUtils.degToRad(node.params.angles[0]),
-                THREE.MathUtils.degToRad(node.params.angles[1]),
-                THREE.MathUtils.degToRad(node.params.angles[2])
-            );
+        const eulerDelta = new THREE.Euler(deltaX, deltaY, deltaZ, 'XYZ');
+        const quatDelta = new THREE.Quaternion().setFromEuler(eulerDelta);
+
+        targetNodes.forEach(node => {
+            const group = meshMap.get(node.id);
+            if (!group) return;
+
+            const v = new THREE.Vector3(node.x, node.y, node.z).sub(new THREE.Vector3(cx, cy, cz));
+            v.applyQuaternion(quatDelta);
+            v.add(new THREE.Vector3(cx, cy, cz));
+            node.x = v.x; node.y = v.y; node.z = v.z;
+
+            group.rotation.setFromQuaternion(group.quaternion.premultiply(quatDelta));
+            node.params.angles = [
+                THREE.MathUtils.radToDeg(group.rotation.x),
+                THREE.MathUtils.radToDeg(group.rotation.y),
+                THREE.MathUtils.radToDeg(group.rotation.z)
+            ];
             updateNodeVisual(node);
         });
         updateEdges();
@@ -1222,12 +1252,14 @@ function applyModalRotationLive() {
 function openMoveDialog() {
     document.getElementById('rotateDialogModal').style.display = 'none';
     if (selectedNodes.length > 0) {
-        const node = getNode(selectedNodes[0]);
-        if (node) {
-            document.getElementById('modalPosX').value = Math.round(node.x);
-            document.getElementById('modalPosY').value = Math.round(node.y);
-            document.getElementById('modalPosZ').value = Math.round(node.z);
-        }
+        let cx = 0, cy = 0, cz = 0;
+        const targetNodes = selectedNodes.map(nid => getNode(nid)).filter(Boolean);
+        targetNodes.forEach(n => { cx += n.x; cy += n.y; cz += n.z; });
+        cx /= targetNodes.length; cy /= targetNodes.length; cz /= targetNodes.length;
+
+        document.getElementById('modalPosX').value = Math.round(cx);
+        document.getElementById('modalPosY').value = Math.round(cy);
+        document.getElementById('modalPosZ').value = Math.round(cz);
     }
     document.getElementById('moveDialogModal').style.display = 'block';
 }
@@ -1333,9 +1365,11 @@ function buildFractalComposition() {
 
 function simulateResonance() {}
 function computeWalsh() {}
+function saveModel() {}
+function loadModel(e) {}
 
 // ============================================================
-// 11. ОТОБРАЖЕНИЕ СВОЙСТВ (ДЛЯ ОДНОЙ ИЛИ ГРУППЫ СФИРАЛЕЙ)
+// 11. ОТОБРАЖЕНИЕ СВОЙСТВ
 // ============================================================
 function renderProperties(id) {
     const container = document.getElementById('propContent');
@@ -1344,10 +1378,14 @@ function renderProperties(id) {
 
     if (selectedNodes.length > 1) {
         if (selectedPart) selectedPart = null;
+        const sampleNode = getNode(selectedNodes[0]);
+        const currentGroupScale = sampleNode ? (sampleNode.params.scale ?? 1.0) : 1.0;
+        const currentGroupStretch = sampleNode ? (sampleNode.params.stretch ?? 1.0) : 1.0;
+
         container.innerHTML = `
             <div class="prop-group highlight">📦 Группа: <b>${selectedNodes.length} шт.</b></div>
-            <div class="prop-group"><label>Общий масштаб группы</label><input type="number" id="groupScale" value="1.0" min="0.1" max="10.0" step="0.1" /></div>
-            <div class="prop-group"><label>Пружина / Растяжение Z</label><input type="number" id="groupStretch" value="1.0" min="0.1" max="5.0" step="0.1" /></div>
+            <div class="prop-group"><label>Общий масштаб группы</label><input type="number" id="groupScale" value="${currentGroupScale}" min="0.1" max="10.0" step="0.1" /></div>
+            <div class="prop-group"><label>Пружина / Растяжение Z</label><input type="number" id="groupStretch" value="${currentGroupStretch}" min="0.1" max="5.0" step="0.1" /></div>
         `;
 
         document.getElementById('groupScale').addEventListener('input', (e) => {
