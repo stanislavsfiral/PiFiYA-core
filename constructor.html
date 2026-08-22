@@ -80,7 +80,7 @@
             </div>
         </div>
 
-        <!-- ====== МОДАЛЬНОЕ ОКНО ПЕРЕМЕЩЕНИЯ (СБОКУ СВЕРХУ) ====== -->
+        <!-- ====== МОДАЛЬНОЕ ОКНО ПЕРЕМЕЩЕНИЯ ====== -->
         <div id="moveDialogModal" class="modal" style="display:none; position:fixed; top:70px; right:70px; width:210px; background:#131b2e; border:1px solid #00e5ff; border-radius:5px; padding:10px 12px; z-index:1000; box-shadow: 0 6px 20px rgba(0,0,0,0.7); color:#f0f4f8; font-size:0.75rem; cursor:move;">
             <div style="font-weight:bold; color:#00e5ff; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #1f2d4a; padding-bottom:4px;">
                 <span>⤩ Перемещение</span>
@@ -93,7 +93,7 @@
             </div>
         </div>
 
-        <!-- ====== МОДАЛЬНОЕ ОКНО ПОВОРОТА (СБОКУ СВЕРХУ) ====== -->
+        <!-- ====== МОДАЛЬНОЕ ОКНО ПОВОРОТА ====== -->
         <div id="rotateDialogModal" class="modal" style="display:none; position:fixed; top:70px; right:70px; width:210px; background:#131b2e; border:1px solid #00e5ff; border-radius:5px; padding:10px 12px; z-index:1000; box-shadow: 0 6px 20px rgba(0,0,0,0.7); color:#f0f4f8; font-size:0.75rem; cursor:move;">
             <div style="font-weight:bold; color:#00e5ff; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #1f2d4a; padding-bottom:4px;">
                 <span>🔄 Поворот группы (°)</span>
@@ -117,8 +117,8 @@
             </div>
         </div>
 
-        <!-- ====== КНОПКА ОТКРЫТИЯ ПАНЕЛИ СВОЙСТВ ====== -->
-        <button id="togglePropBtn" class="toggle-prop-btn" style="position:absolute; bottom:70px; right:10px; z-index:50; background:#00e5ff; color:#0b0f19; border:none; border-radius:50%; width:48px; height:48px; font-size:1.4rem; font-weight:bold; cursor:pointer; box-shadow:0 4px 16px rgba(0,229,255,0.4);">
+        <!-- ====== КНОПКА ОТКРЫТИЯ ПАНЕЛИ СВОЙСТВ (Сдвинута выше, чтобы не перекрывать инпуты) ====== -->
+        <button id="togglePropBtn" class="toggle-prop-btn" style="position:absolute; bottom:140px; right:15px; z-index:50; background:#00e5ff; color:#0b0f19; border:none; border-radius:50%; width:44px; height:44px; font-size:1.2rem; font-weight:bold; cursor:pointer; box-shadow:0 4px 16px rgba(0,229,255,0.4);">
             📐
         </button>
 
@@ -168,3 +168,9 @@
 <script type="module" src="./editor/editor.js"></script>
 </body>
 </html>
+```[cite: 8]
+
+---
+
+### 2. Обновленный `editor.js`
+В функции `renderProperties` полностью удален блок параметра «Сжатие по ширине» (`width`), оставлено исключительно **«Сжатие по высоте (%)»**.

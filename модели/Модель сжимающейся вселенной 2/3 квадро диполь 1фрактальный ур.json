@@ -1,0 +1,716 @@
+{
+  "model_name": "GIDEON-Fractal-Complex",
+  "total_nodes": 12,
+  "nodes": [
+    {
+      "id": 1,
+      "mode": "Single",
+      "x": -0.01949798717601207,
+      "y": 97.86848285715855,
+      "z": 0.019222400939747555,
+      "params": {
+        "N": 5,
+        "target_len": 1000,
+        "scale": 1,
+        "stretch": 1,
+        "angles": [
+          0,
+          0,
+          0
+        ],
+        "showRight": true,
+        "showS": true,
+        "showLeft": true,
+        "showSLeft": true,
+        "rightSub": {
+          "height": 100,
+          "width": 100
+        },
+        "leftSub": {
+          "height": 100,
+          "width": 100
+        },
+        "sRightSub": {
+          "height": 100,
+          "width": 100
+        },
+        "sLeftSub": {
+          "height": 100,
+          "width": 100
+        }
+      },
+      "entryPoint": {
+        "x": 70,
+        "y": 0,
+        "z": 90
+      },
+      "exitPoint": {
+        "x": 0,
+        "y": 4.2862637970157365e-15,
+        "z": 0
+      },
+      "quantumState": {
+        "intensity": 0,
+        "psi_real": 0,
+        "psi_imag": 0
+      }
+    },
+    {
+      "id": 2,
+      "mode": "Single",
+      "x": -35.10586815253512,
+      "y": 97.86848285715855,
+      "z": -44.91155863286563,
+      "params": {
+        "N": 5,
+        "target_len": 1000,
+        "scale": 0.5,
+        "stretch": 1,
+        "angles": [
+          0,
+          180,
+          0
+        ],
+        "showRight": true,
+        "showS": true,
+        "showLeft": true,
+        "showSLeft": true,
+        "rightSub": {
+          "height": 100,
+          "width": 100
+        },
+        "leftSub": {
+          "height": 100,
+          "width": 100
+        },
+        "sRightSub": {
+          "height": 100,
+          "width": 100
+        },
+        "sLeftSub": {
+          "height": 100,
+          "width": 100
+        }
+      },
+      "entryPoint": {
+        "x": 35,
+        "y": 0,
+        "z": 45
+      },
+      "exitPoint": {
+        "x": 0,
+        "y": 2.1431318985078682e-15,
+        "z": 0
+      },
+      "quantumState": {
+        "intensity": 0,
+        "psi_real": 0,
+        "psi_imag": 0
+      }
+    },
+    {
+      "id": 3,
+      "mode": "Single",
+      "x": 35.00837821665507,
+      "y": 97.86848285715855,
+      "z": 45.00767063756439,
+      "params": {
+        "N": 5,
+        "target_len": 1000,
+        "scale": 0.5,
+        "stretch": 1,
+        "angles": [
+          0,
+          180,
+          0
+        ],
+        "showRight": true,
+        "showS": true,
+        "showLeft": true,
+        "showSLeft": true,
+        "rightSub": {
+          "height": 100,
+          "width": 100
+        },
+        "leftSub": {
+          "height": 100,
+          "width": 100
+        },
+        "sRightSub": {
+          "height": 100,
+          "width": 100
+        },
+        "sLeftSub": {
+          "height": 100,
+          "width": 100
+        }
+      },
+      "entryPoint": {
+        "x": 35,
+        "y": 0,
+        "z": 45
+      },
+      "exitPoint": {
+        "x": 0,
+        "y": 2.1431318985078682e-15,
+        "z": 0
+      },
+      "quantumState": {
+        "intensity": 0,
+        "psi_real": 0,
+        "psi_imag": 0
+      }
+    },
+    {
+      "id": 4,
+      "mode": "Single",
+      "x": -0.05849396152802726,
+      "y": 97.86848285715855,
+      "z": 0.05766720281926228,
+      "params": {
+        "N": 5,
+        "target_len": 1000,
+        "scale": 1,
+        "stretch": 1,
+        "angles": [
+          -180,
+          0,
+          -180
+        ],
+        "showRight": true,
+        "showS": true,
+        "showLeft": true,
+        "showSLeft": true,
+        "rightSub": {
+          "height": 100,
+          "width": 100
+        },
+        "leftSub": {
+          "height": 100,
+          "width": 100
+        },
+        "sRightSub": {
+          "height": 100,
+          "width": 100
+        },
+        "sLeftSub": {
+          "height": 100,
+          "width": 100
+        }
+      },
+      "entryPoint": {
+        "x": 70,
+        "y": 0,
+        "z": 90
+      },
+      "exitPoint": {
+        "x": 0,
+        "y": 4.2862637970157365e-15,
+        "z": 0
+      },
+      "quantumState": {
+        "intensity": 0,
+        "psi_real": 0,
+        "psi_imag": 0
+      }
+    },
+    {
+      "id": 5,
+      "mode": "Single",
+      "x": 35.02787620383108,
+      "y": 97.86848285715855,
+      "z": 44.98844823662465,
+      "params": {
+        "N": 5,
+        "target_len": 1000,
+        "scale": 0.5,
+        "stretch": 1,
+        "angles": [
+          -6.673287101320391e-15,
+          -6.3611093629270335e-15,
+          4.848426880698882e-15
+        ],
+        "showRight": true,
+        "showS": true,
+        "showLeft": true,
+        "showSLeft": true,
+        "rightSub": {
+          "height": 100,
+          "width": 100
+        },
+        "leftSub": {
+          "height": 100,
+          "width": 100
+        },
+        "sRightSub": {
+          "height": 100,
+          "width": 100
+        },
+        "sLeftSub": {
+          "height": 100,
+          "width": 100
+        }
+      },
+      "entryPoint": {
+        "x": 35,
+        "y": 0,
+        "z": 45
+      },
+      "exitPoint": {
+        "x": 0,
+        "y": 2.1431318985078682e-15,
+        "z": 0
+      },
+      "quantumState": {
+        "intensity": 0,
+        "psi_real": 0,
+        "psi_imag": 0
+      }
+    },
+    {
+      "id": 6,
+      "mode": "Single",
+      "x": -35.086370165359114,
+      "y": 97.86848285715855,
+      "z": -44.93078103380539,
+      "params": {
+        "N": 5,
+        "target_len": 1000,
+        "scale": 0.5,
+        "stretch": 1,
+        "angles": [
+          -6.673287101320391e-15,
+          -6.3611093629270335e-15,
+          4.848426880698882e-15
+        ],
+        "showRight": true,
+        "showS": true,
+        "showLeft": true,
+        "showSLeft": true,
+        "rightSub": {
+          "height": 100,
+          "width": 100
+        },
+        "leftSub": {
+          "height": 100,
+          "width": 100
+        },
+        "sRightSub": {
+          "height": 100,
+          "width": 100
+        },
+        "sLeftSub": {
+          "height": 100,
+          "width": 100
+        }
+      },
+      "entryPoint": {
+        "x": 35,
+        "y": 0,
+        "z": 45
+      },
+      "exitPoint": {
+        "x": 0,
+        "y": 2.1431318985078682e-15,
+        "z": 0
+      },
+      "quantumState": {
+        "intensity": 0,
+        "psi_real": 0,
+        "psi_imag": 0
+      }
+    },
+    {
+      "id": 13,
+      "mode": "Single",
+      "x": -0.019497987176012067,
+      "y": 97.86848285715855,
+      "z": 0.05766720281926351,
+      "params": {
+        "N": 5,
+        "target_len": 1000,
+        "scale": 1,
+        "stretch": 1,
+        "angles": [
+          -180,
+          0,
+          0
+        ],
+        "showRight": true,
+        "showS": true,
+        "showLeft": true,
+        "showSLeft": true,
+        "rightSub": {
+          "height": 100,
+          "width": 100
+        },
+        "leftSub": {
+          "height": 100,
+          "width": 100
+        },
+        "sRightSub": {
+          "height": 100,
+          "width": 100
+        },
+        "sLeftSub": {
+          "height": 100,
+          "width": 100
+        }
+      },
+      "entryPoint": {
+        "x": 70,
+        "y": 0,
+        "z": 90
+      },
+      "exitPoint": {
+        "x": 0,
+        "y": 4.2862637970157365e-15,
+        "z": 0
+      },
+      "quantumState": {
+        "intensity": 0,
+        "psi_real": 0,
+        "psi_imag": 0
+      }
+    },
+    {
+      "id": 14,
+      "mode": "Single",
+      "x": -35.10586815253513,
+      "y": 97.86848285715857,
+      "z": 44.98844823662465,
+      "params": {
+        "N": 5,
+        "target_len": 1000,
+        "scale": 0.5,
+        "stretch": 1,
+        "angles": [
+          -4.296495291499103e-31,
+          7.016709298534876e-15,
+          -180
+        ],
+        "showRight": true,
+        "showS": true,
+        "showLeft": true,
+        "showSLeft": true,
+        "rightSub": {
+          "height": 100,
+          "width": 100
+        },
+        "leftSub": {
+          "height": 100,
+          "width": 100
+        },
+        "sRightSub": {
+          "height": 100,
+          "width": 100
+        },
+        "sLeftSub": {
+          "height": 100,
+          "width": 100
+        }
+      },
+      "entryPoint": {
+        "x": 35,
+        "y": 0,
+        "z": 45
+      },
+      "exitPoint": {
+        "x": 0,
+        "y": 2.1431318985078682e-15,
+        "z": 0
+      },
+      "quantumState": {
+        "intensity": 0,
+        "psi_real": 0,
+        "psi_imag": 0
+      }
+    },
+    {
+      "id": 15,
+      "mode": "Single",
+      "x": 35.008378216655075,
+      "y": 97.86848285715855,
+      "z": -44.93078103380538,
+      "params": {
+        "N": 5,
+        "target_len": 1000,
+        "scale": 0.5,
+        "stretch": 1,
+        "angles": [
+          -4.296495291499103e-31,
+          7.016709298534876e-15,
+          -180
+        ],
+        "showRight": true,
+        "showS": true,
+        "showLeft": true,
+        "showSLeft": true,
+        "rightSub": {
+          "height": 100,
+          "width": 100
+        },
+        "leftSub": {
+          "height": 100,
+          "width": 100
+        },
+        "sRightSub": {
+          "height": 100,
+          "width": 100
+        },
+        "sLeftSub": {
+          "height": 100,
+          "width": 100
+        }
+      },
+      "entryPoint": {
+        "x": 35,
+        "y": 0,
+        "z": 45
+      },
+      "exitPoint": {
+        "x": 0,
+        "y": 2.1431318985078682e-15,
+        "z": 0
+      },
+      "quantumState": {
+        "intensity": 0,
+        "psi_real": 0,
+        "psi_imag": 0
+      }
+    },
+    {
+      "id": 16,
+      "mode": "Single",
+      "x": -0.05849396152802726,
+      "y": 97.86848285715855,
+      "z": 0.01922240093974501,
+      "params": {
+        "N": 5,
+        "target_len": 1000,
+        "scale": 1,
+        "stretch": 1,
+        "angles": [
+          0,
+          0,
+          -180
+        ],
+        "showRight": true,
+        "showS": true,
+        "showLeft": true,
+        "showSLeft": true,
+        "rightSub": {
+          "height": 100,
+          "width": 100
+        },
+        "leftSub": {
+          "height": 100,
+          "width": 100
+        },
+        "sRightSub": {
+          "height": 100,
+          "width": 100
+        },
+        "sLeftSub": {
+          "height": 100,
+          "width": 100
+        }
+      },
+      "entryPoint": {
+        "x": 70,
+        "y": 0,
+        "z": 90
+      },
+      "exitPoint": {
+        "x": 0,
+        "y": 4.2862637970157365e-15,
+        "z": 0
+      },
+      "quantumState": {
+        "intensity": 0,
+        "psi_real": 0,
+        "psi_imag": 0
+      }
+    },
+    {
+      "id": 17,
+      "mode": "Single",
+      "x": 35.027876203831084,
+      "y": 97.86848285715854,
+      "z": -44.911558632865635,
+      "params": {
+        "N": 5,
+        "target_len": 1000,
+        "scale": 0.5,
+        "stretch": 1,
+        "angles": [
+          180,
+          -6.361109362927037e-15,
+          4.848426880698883e-15
+        ],
+        "showRight": true,
+        "showS": true,
+        "showLeft": true,
+        "showSLeft": true,
+        "rightSub": {
+          "height": 100,
+          "width": 100
+        },
+        "leftSub": {
+          "height": 100,
+          "width": 100
+        },
+        "sRightSub": {
+          "height": 100,
+          "width": 100
+        },
+        "sLeftSub": {
+          "height": 100,
+          "width": 100
+        }
+      },
+      "entryPoint": {
+        "x": 35,
+        "y": 0,
+        "z": 45
+      },
+      "exitPoint": {
+        "x": 0,
+        "y": 2.1431318985078682e-15,
+        "z": 0
+      },
+      "quantumState": {
+        "intensity": 0,
+        "psi_real": 0,
+        "psi_imag": 0
+      }
+    },
+    {
+      "id": 18,
+      "mode": "Single",
+      "x": -35.08637016535912,
+      "y": 97.86848285715855,
+      "z": 45.007670637564416,
+      "params": {
+        "N": 5,
+        "target_len": 1000,
+        "scale": 0.5,
+        "stretch": 1,
+        "angles": [
+          180,
+          -6.361109362927037e-15,
+          4.848426880698883e-15
+        ],
+        "showRight": true,
+        "showS": true,
+        "showLeft": true,
+        "showSLeft": true,
+        "rightSub": {
+          "height": 100,
+          "width": 100
+        },
+        "leftSub": {
+          "height": 100,
+          "width": 100
+        },
+        "sRightSub": {
+          "height": 100,
+          "width": 100
+        },
+        "sLeftSub": {
+          "height": 100,
+          "width": 100
+        }
+      },
+      "entryPoint": {
+        "x": 35,
+        "y": 0,
+        "z": 45
+      },
+      "exitPoint": {
+        "x": 0,
+        "y": 2.1431318985078682e-15,
+        "z": 0
+      },
+      "quantumState": {
+        "intensity": 0,
+        "psi_real": 0,
+        "psi_imag": 0
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": 1,
+      "to": 3,
+      "weight": 1,
+      "type": "right_polarization"
+    },
+    {
+      "from": 4,
+      "to": 6,
+      "weight": 1,
+      "type": "right_polarization"
+    },
+    {
+      "from": 1,
+      "to": 6,
+      "weight": 1,
+      "type": "right_polarization"
+    },
+    {
+      "from": 4,
+      "to": 3,
+      "weight": 1,
+      "type": "right_polarization"
+    },
+    {
+      "from": 13,
+      "to": 15,
+      "weight": 1,
+      "type": "right_polarization"
+    },
+    {
+      "from": 16,
+      "to": 18,
+      "weight": 1,
+      "type": "right_polarization"
+    },
+    {
+      "from": 13,
+      "to": 18,
+      "weight": 1,
+      "type": "right_polarization"
+    },
+    {
+      "from": 16,
+      "to": 15,
+      "weight": 1,
+      "type": "right_polarization"
+    },
+    {
+      "from": 1,
+      "to": 15,
+      "weight": 1,
+      "type": "right_polarization"
+    },
+    {
+      "from": 4,
+      "to": 18,
+      "weight": 1,
+      "type": "right_polarization"
+    },
+    {
+      "from": 13,
+      "to": 3,
+      "weight": 1,
+      "type": "right_polarization"
+    },
+    {
+      "from": 16,
+      "to": 6,
+      "weight": 1,
+      "type": "right_polarization"
+    }
+  ]
+}
