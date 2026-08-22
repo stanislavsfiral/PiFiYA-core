@@ -1365,8 +1365,57 @@ function buildFractalComposition() {
 
 function simulateResonance() {}
 function computeWalsh() {}
-function saveModel() {}
-function loadModel(e) {}
+
+// ============================================================
+// 💾 СОХРАНЕНИЕ И ЗАГРУЗКА МОДЕЛЕЙ (.json)
+// ============================================================
+function saveModel() {
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(graph, null, 2));
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.setAttribute("href", dataStr);
+    downloadAnchor.setAttribute("download", "gideon_sfiral_model.json");
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+}
+
+function loadModel(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(event) {
+        try {
+            const loadedData = JSON.parse(event.target.result);
+            if (loadedData && Array.isArray(loadedData.nodes)) {
+                saveState();
+                graph.nodes = loadedData.nodes;
+                graph.edges = Array.isArray(loadedData.edges) ? loadedData.edges : [];
+                
+                // Вычисляем следующий безопасный ID для новых узлов
+                let maxId = 0;
+                graph.nodes.forEach(n => { if (n.id > maxId) maxId = n.id; });
+                nextId = maxId + 1;
+
+                updateAllNodes();
+                selectedNodes = [];
+                selectedPart = null;
+                transformControls.detach();
+                renderProperties(null);
+                sendDataToPythonCore();
+                alert('📦 Модель успешно загружена!');
+            } else {
+                alert('⚠️ Ошибка: Неверный формат файла модели.');
+            }
+        } catch (err) {
+            console.error(err);
+            alert('❌ Не удалось прочитать JSON-файл.');
+        }
+        // Сбрасываем значение инпута, чтобы можно было загрузить тот же файл повторно
+        e.target.value = '';
+    };
+    reader.readAsText(file);
+}
 
 // ============================================================
 // 11. ОТОБРАЖЕНИЕ СВОЙСТВ
@@ -1435,7 +1484,7 @@ function renderProperties(id) {
 
     container.innerHTML = `
         <div class="prop-group highlight">📦 Сфираль [ID: ${node.id}]</div>
-        <div class="prop-group"><label>Общий масштаб (+ / -)</label><input type="number" id="propScale" value="${p.scale ?? 1.0}" min="0.1" max="10.0" step="0.1" /></div>
+        <div class="prop-group"><label>Общий масштаб (+ / -)</label><input type="number" id="propScale" value="${p.scale ?? 1.0}" min="0.1" max0="10.0" step="0.1" /></div>
         <div class="prop-group"><label>Пружина / Растяжение Z (] / [)</label><input type="number" id="propStretch" value="${p.stretch ?? 1.0}" min="0.1" max="5.0" step="0.1" /></div>
     `;
 
