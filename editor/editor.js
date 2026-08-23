@@ -173,6 +173,8 @@ const sendDataPythonCoreThrottled = () => {
 // ============================================================
 const container = document.getElementById('canvasContainer');
 const canvas = document.getElementById('renderCanvas');
+canvas.style.touchAction = 'none'; // Отключаем дефолтный скролл браузера для корректного тач-управления
+
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 const scene = new THREE.Scene();
@@ -1050,41 +1052,45 @@ class UIManager {
 
     setupMouseSelection() {
         let touchDownPos = { x: 0, y: 0 };
-        let touchDownObjectId = null;
-        let touchDownPart = null;
+        let touchTimer = null;
+        let isLongPress = false;
 
+        // Поддержка долгого нажатия для мобилок (открытие меню поворота/перемещения)
         renderer.domElement.addEventListener('touchstart', (e) => {
             if (e.touches.length === 1) {
                 const touch = e.touches[0];
                 touchDownPos.x = touch.clientX;
                 touchDownPos.y = touch.clientY;
+                isLongPress = false;
+                
                 const hitData = getObjectUnderMouse(touch.clientX, touch.clientY);
-                touchDownObjectId = hitData ? hitData.nodeId : null;
-                touchDownPart = hitData ? hitData.part : null;
+                if (hitData) {
+                    touchTimer = setTimeout(() => {
+                        isLongPress = true;
+                        selectedNodes = [hitData.nodeId];
+                        selectedPart = hitData.part;
+                        updateSelectionHighlights();
+                        renderProperties(hitData.nodeId);
+                        openRotateDialog(); // Открываем меню поворота долгим тапом
+                    }, 650);
+                }
+            }
+        }, { passive: true });
+
+        renderer.domElement.addEventListener('touchmove', (e) => {
+            if (e.touches.length === 1) {
+                const touch = e.touches[0];
+                const dx = touch.clientX - touchDownPos.x;
+                const dy = touch.clientY - touchDownPos.y;
+                if (Math.sqrt(dx * dx + dy * dy) > 10 && touchTimer) {
+                    clearTimeout(touchTimer);
+                    touchTimer = null;
+                }
             }
         }, { passive: true });
 
         renderer.domElement.addEventListener('touchend', (e) => {
-            if (e.changedTouches.length === 1) {
-                const touch = e.changedTouches[0];
-                const dx = touch.clientX - touchDownPos.x;
-                const dy = touch.clientY - touchDownPos.y;
-                if (Math.sqrt(dx * dx + dy * dy) < 10) {
-                    if (touchDownObjectId !== null) {
-                        const id = touchDownObjectId;
-                        selectedNodes = [id];
-                        selectedPart = touchDownPart;
-                        updateSelectionHighlights();
-                        renderProperties(id);
-                    } else if (!transformControls.dragging) {
-                        selectedNodes = [];
-                        selectedPart = null;
-                        transformControls.detach();
-                        updateSelectionHighlights();
-                        renderProperties(null);
-                    }
-                }
-            }
+            if (touchTimer) { clearTimeout(touchTimer); touchTimer = null; }
         }, { passive: true });
 
         const selectionRect = document.getElementById('selectionRect');
@@ -1095,7 +1101,21 @@ class UIManager {
         let boxStart = { x: 0, y: 0 };
 
         renderer.domElement.addEventListener('pointerdown', (e) => {
-            if (e.button !== 0) return;
+            // Клик ПКМ на ПК — открытие модального окна поворота
+            if (e.button === 2) {
+                e.preventDefault();
+                const hitData = getObjectUnderMouse(e.clientX, e.clientY);
+                if (hitData) {
+                    selectedNodes = [hitData.nodeId];
+                    selectedPart = hitData.part;
+                    updateSelectionHighlights();
+                    renderProperties(hitData.nodeId);
+                    openRotateDialog();
+                }
+                return;
+            }
+
+            if (e.button !== 0 || isLongPress) return;
             document.getElementById('moveDialogModal').style.display = 'none';
             document.getElementById('rotateDialogModal').style.display = 'none';
 
@@ -1106,7 +1126,8 @@ class UIManager {
             mouseDownPart = hitData ? hitData.part : null;
             isBoxSelecting = false;
 
-            if (mouseDownObjectId === null && !transformControls.dragging) {
+            // Рамка выделения работает ТОЛЬКО если включена соответствующая кнопка
+            if (window.isBoxSelectMode && mouseDownObjectId === null && !transformControls.dragging) {
                 isBoxSelecting = true;
                 boxStart.x = e.clientX;
                 boxStart.y = e.clientY;
@@ -1134,7 +1155,7 @@ class UIManager {
         });
 
         renderer.domElement.addEventListener('pointerup', (e) => {
-            if (e.button !== 0) return;
+            if ((e.button !== 0 && e.button !== 2) || isLongPress) return;
             const dx = e.clientX - mouseDownPos.x;
             const dy = e.clientY - mouseDownPos.y;
             const isClick = Math.sqrt(dx * dx + dy * dy) < 5;
@@ -1173,7 +1194,7 @@ class UIManager {
                 return;
             }
 
-            if (isClick) {
+            if (isClick && e.button === 0) {
                 if (mouseDownObjectId !== null) {
                     const id = mouseDownObjectId;
                     if (e.ctrlKey || e.shiftKey) {
