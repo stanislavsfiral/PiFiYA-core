@@ -14,23 +14,24 @@ let undoStack = [], redoStack = [];
 const MAX_UNDO = 30;
 let clipboard = null;
 let pythonTimeout = null;
+let autoConnectTimeout = null;
 
 // Виртуальный контейнер для управления группой выделенных объектов
 const groupTransformProxy = new THREE.Group();
 groupTransformProxy.name = "GIDEON_Group_Proxy";
 
-// Увеличенная яркость, насыщенность и толщина линий для идеальной видимости
+// Глобальные батчи для производительной отрисовки линий ребер
 const batchLines = {
-    right: new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xff3333, linewidth: 3, transparent: true, opacity: 1.0 })),
-    left: new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x00c0ff, linewidth: 3, transparent: true, opacity: 1.0 })),
-    s: new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xffea00, linewidth: 3, transparent: true, opacity: 1.0 }))
+    right: new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xff4444, transparent: true, opacity: 0.9 })),
+    left: new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x00a0ff, transparent: true, opacity: 0.9 })),
+    s: new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xffe600, transparent: true, opacity: 0.9 }))
 };
 
-// Кэш геометрий сфиралей с учетом флагов отображения витков
+// Кэш геометрий сфиралей для устранения фризов
 const geometryCache = new Map();
 
-function getCachedSfiralGeometries(N, scale, stretch, subParams, showRight, showLeft) {
-    const key = `${N}_${scale}_${stretch}_${showRight}_${showLeft}_${JSON.stringify(subParams)}`;
+function getCachedSfiralGeometries(N, scale, stretch, subParams) {
+    const key = `${N}_${scale}_${stretch}_${JSON.stringify(subParams)}`;
     if (geometryCache.has(key)) return geometryCache.get(key);
 
     const R = (60 + N * 2) * scale;
@@ -105,32 +106,47 @@ function removeNode(id) {
 
 function getNode(id) { return graph.nodes.find(n => n.id === id); }
 
+// ============================================================
+// АВТОМАТИЧЕСКАЯ СТЫКОВКА
+// ============================================================
 function autoConnectStuckNodes() {
     if (graph.nodes.length > 50) return;
-}
+    if (autoConnectTimeout) clearTimeout(autoConnectTimeout);
+    
+    autoConnectTimeout = setTimeout(() => {
+        let newEdgesCount = 0;
+        const EPSILON = 0.05;
 
-function compileTopologyToQuantumCircuit() {
-    let circuitGates = [];
-    graph.nodes.forEach(node => {
-        const angles = node.params.angles || [0, 0, 0];
-        if (angles[2] % 180 === 0 && angles[2] !== 0) {
-            circuitGates.push(`S(q${node.id})`);
-        } else {
-            circuitGates.push(`H(q${node.id})`);
+        const worldNodes = graph.nodes.map(n => {
+            const group = meshMap.get(n.id);
+            if (!group || !n.exitPoint || !n.entryPoint) return null;
+            const exit = new THREE.Vector3().setFromMatrixPosition(group.matrixWorld).add(n.exitPoint.clone().applyEuler(group.rotation));
+            const entry = new THREE.Vector3().setFromMatrixPosition(group.matrixWorld).add(n.entryPoint.clone().applyEuler(group.rotation));
+            return { id: n.id, exit, entry };
+        }).filter(Boolean);
+
+        for (let i = 0; i < worldNodes.length; i++) {
+            for (let j = 0; j < worldNodes.length; j++) {
+                if (i === j) continue;
+                if (worldNodes[i].exit.distanceTo(worldNodes[j].entry) < EPSILON) {
+                    const exists = graph.edges.some(e => 
+                        (e.from === worldNodes[i].id && e.to === worldNodes[j].id) || 
+                        (e.from === worldNodes[j].id && e.to === worldNodes[i].id)
+                    );
+                    if (!exists) {
+                        addEdge(worldNodes[i].id, worldNodes[j].id, 1.0, 'right_polarization');
+                        newEdgesCount++;
+                    }
+                }
+            }
         }
-    });
-    graph.edges.forEach(edge => {
-        circuitGates.push(`CNOT(q${edge.from}, q${edge.to})`);
-    });
 
-    const consoleEl = document.getElementById('console');
-    if (consoleEl && graph.nodes.length > 0) {
-        consoleEl.style.display = 'block';
-        consoleEl.innerHTML += `
-            <div class="line success">🧬 [Авто-Компилятор схемы]: Сгенерирован квантовый пайплайн</div>
-            <div class="line">🛠️ [Цепочка вентилей]: ${circuitGates.join(' — ')}</div>
-        `;
-    }
+        if (newEdgesCount > 0) {
+            updateEdges();
+            updateStats();
+            sendDataToPythonCore();
+        }
+    }, 50);
 }
 
 // ============================================================
@@ -152,11 +168,8 @@ async function sendDataToPythonCore() {
         const result = await response.json();
         if (result.status === "success") {
             const consoleEl = document.getElementById('console');
-            if (consoleEl) {
-                consoleEl.style.display = 'block';
-                consoleEl.innerHTML += `<div class="line success">⚡ [Ядро онлайн]: Сфиралей обработано: ${result.computed_nodes}</div>`;
-            }
-            compileTopologyToQuantumCircuit();
+            consoleEl.style.display = 'block';
+            consoleEl.innerHTML = `<div class="line success">⚡ [Ядро онлайн]: Сфиралей: ${result.computed_nodes}</div>`;
         }
     } catch (err) {
         console.warn("⚠️ Локальное ядро не отвечает.");
@@ -176,9 +189,9 @@ const canvas = document.getElementById('renderCanvas');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 const scene = new THREE.Scene();
-const ambient = new THREE.AmbientLight(0xffffff, 0.9);
+const ambient = new THREE.AmbientLight(0xffffff, 0.8);
 scene.add(ambient);
-const dirLight = new THREE.DirectionalLight(0xffffff, 0.7);
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.5);
 dirLight.position.set(1, 2, 1);
 scene.add(dirLight);
 
@@ -210,7 +223,7 @@ controls.mouseButtons = {
 };
 
 const transformControls = new TransformControls(camera, renderer.domElement);
-transformControls.size = 0.9;
+transformControls.size = 0.8;
 transformControls.space = 'local';
 scene.add(transformControls);
 
@@ -266,7 +279,6 @@ transformControls.addEventListener('change', () => {
                 }
                 updateBottomBarValues(node);
                 updateEdges();
-                autoConnectStuckNodes();
             }
         }
     } else if (selectedNodes.length > 1) {
@@ -312,7 +324,6 @@ transformControls.addEventListener('change', () => {
             updateNodeVisual(node);
         });
         updateEdges();
-        autoConnectStuckNodes();
     }
 });
 
@@ -355,14 +366,12 @@ function createSfiralGroup(node) {
     const stretch = node.params.stretch !== undefined ? node.params.stretch : 1.0;
     const N = node.params.N || 5;
 
-    const { rightPts, sRightPts, leftPts, sLeftPts } = getCachedSfiralGeometries(
-        N, nodeScale, stretch, node.params, node.params.showRight, node.params.showLeft
-    );
+    const { rightPts, sRightPts, leftPts, sLeftPts } = getCachedSfiralGeometries(N, nodeScale, stretch, node.params);
 
     if (node.params.showRight) {
         const rightLine = new THREE.Line(
             new THREE.BufferGeometry().setFromPoints(rightPts),
-            new THREE.LineBasicMaterial({ color: 0xff3333, transparent: true, opacity: 1.0 })
+            new THREE.LineBasicMaterial({ color: 0xff4444, transparent: true, opacity: 0.9 })
         );
         rightLine.userData = { nodeId: node.id, part: 'right' };
         group.add(rightLine);
@@ -370,7 +379,7 @@ function createSfiralGroup(node) {
     if (node.params.showS) {
         const sLine = new THREE.Line(
             new THREE.BufferGeometry().setFromPoints(sRightPts),
-            new THREE.LineBasicMaterial({ color: 0xffea00, transparent: true, opacity: 1.0 })
+            new THREE.LineBasicMaterial({ color: 0xffe600, transparent: true, opacity: 0.9 })
         );
         sLine.userData = { nodeId: node.id, part: 's', isSLoopQuantum: true };
         group.add(sLine);
@@ -378,7 +387,7 @@ function createSfiralGroup(node) {
     if (node.params.showLeft) {
         const leftLine = new THREE.Line(
             new THREE.BufferGeometry().setFromPoints(leftPts),
-            new THREE.LineBasicMaterial({ color: 0x00c0ff, transparent: true, opacity: 1.0 })
+            new THREE.LineBasicMaterial({ color: 0x00a0ff, transparent: true, opacity: 0.9 })
         );
         leftLine.userData = { nodeId: node.id, part: 'left' };
         group.add(leftLine);
@@ -386,7 +395,7 @@ function createSfiralGroup(node) {
     if (node.params.showSLeft) {
         const sLeftLine = new THREE.Line(
             new THREE.BufferGeometry().setFromPoints(sLeftPts),
-            new THREE.LineBasicMaterial({ color: 0xffea00, transparent: true, opacity: 1.0 })
+            new THREE.LineBasicMaterial({ color: 0xffe600, transparent: true, opacity: 0.9 })
         );
         sLeftLine.userData = { nodeId: node.id, part: 'sLeft', isSLoopQuantum: true };
         group.add(sLeftLine);
@@ -395,9 +404,9 @@ function createSfiralGroup(node) {
     const intensity = node.quantumState?.intensity || 0;
     const isExcited = intensity > 0.3;
     const sphereColor = isExcited ? 0x00ffcc : 0xffaa00;
-    const sphereRadius = (5 + Math.min(intensity * 8, 14)) * nodeScale;
-    const centerGeo = new THREE.SphereGeometry(sphereRadius, 10, 10);
-    const centerMat = new THREE.MeshBasicMaterial({ color: sphereColor, transparent: true, opacity: isExcited ? 1.0 : 0.85 });
+    const sphereRadius = (4 + Math.min(intensity * 8, 14)) * nodeScale;
+    const centerGeo = new THREE.SphereGeometry(sphereRadius, 8, 8);
+    const centerMat = new THREE.MeshBasicMaterial({ color: sphereColor, transparent: true, opacity: isExcited ? 1.0 : 0.7 });
     const center = new THREE.Mesh(centerGeo, centerMat);
     center.userData = { nodeId: node.id, part: 'center' };
     group.add(center);
@@ -407,9 +416,8 @@ function createSfiralGroup(node) {
     group.rotation.y = THREE.MathUtils.degToRad(angles[1]);
     group.rotation.z = THREE.MathUtils.degToRad(angles[2]);
 
-    node.entryPoint = rightPts.length > 0 ? rightPts[0].clone() : new THREE.Vector3(0, 0, 0);
-    node.exitPoint = leftPts.length > 0 ? leftPts[0].clone() : new THREE.Vector3(0, 0, 0);
-
+    node.entryPoint = rightPts[0].clone();
+    node.exitPoint = sRightPts[sRightPts.length - 1].clone();
     group.userData.nodeId = node.id;
     return group;
 }
@@ -449,7 +457,6 @@ function updateEdges() {
     }
 
     const points = { right: [], left: [], s: [] };
-    const MAX_CONNECTION_DIST = 250;
 
     graph.edges.forEach(edge => {
         const fromNode = getNode(edge.from);
@@ -458,56 +465,12 @@ function updateEdges() {
         const toGroup = meshMap.get(edge.to);
         if (!fromNode || !toNode || !fromGroup || !toGroup) return;
 
-        const N1 = fromNode.params.N || 5, sc1 = fromNode.params.scale ?? 1.0, st1 = fromNode.params.stretch ?? 1.0;
-        const geom1 = getCachedSfiralGeometries(N1, sc1, st1, fromNode.params, fromNode.params.showRight, fromNode.params.showLeft);
-        
-        const N2 = toNode.params.N || 5, sc2 = toNode.params.scale ?? 1.0, st2 = toNode.params.stretch ?? 1.0;
-        const geom2 = getCachedSfiralGeometries(N2, sc2, st2, toNode.params, toNode.params.showRight, toNode.params.showLeft);
+        const p1 = new THREE.Vector3().setFromMatrixPosition(fromGroup.matrixWorld).add(fromNode.exitPoint.clone().applyEuler(fromGroup.rotation));
+        const p2 = new THREE.Vector3().setFromMatrixPosition(toGroup.matrixWorld).add(toNode.entryPoint.clone().applyEuler(toGroup.rotation));
 
-        const rot1 = fromNode.params.angles || [0, 0, 0];
-        const rot2 = toNode.params.angles || [0, 0, 0];
-        const diffY = Math.abs((rot2[1] - rot1[1]) % 360);
-        const diffZ = Math.abs((rot2[2] - rot1[2]) % 360);
-
-        const isFlipped180 = (Math.abs(diffY - 180) < 5 || Math.abs(diffY - 540) < 5) && 
-                             (Math.abs(diffZ - 180) < 5 || Math.abs(diffZ - 540) < 5);
-
-        const isNotFlipped = (diffY < 5 || Math.abs(diffY - 360) < 5) && 
-                             (diffZ < 5 || Math.abs(diffZ - 360) < 5);
-
-        const r1_free = geom1.rightPts[0].clone().applyEuler(fromGroup.rotation).add(fromGroup.position);
-        const l1_free = geom1.leftPts[0].clone().applyEuler(fromGroup.rotation).add(fromGroup.position);
-
-        const r2_free = geom2.rightPts[0].clone().applyEuler(toGroup.rotation).add(toGroup.position);
-        const l2_free = geom2.leftPts[0].clone().applyEuler(toGroup.rotation).add(toGroup.position);
-
-        if (isFlipped180) {
-            if (fromNode.params.showRight && toNode.params.showRight) {
-                const distR = r1_free.distanceTo(r2_free);
-                if (distR < MAX_CONNECTION_DIST) {
-                    points.right.push(r1_free, r2_free);
-                }
-            }
-            if (fromNode.params.showLeft && toNode.params.showLeft) {
-                const distL = l1_free.distanceTo(l2_free);
-                if (distL < MAX_CONNECTION_DIST) {
-                    points.left.push(l1_free, l2_free);
-                }
-            }
-        } else if (isNotFlipped) {
-            if (fromNode.params.showRight && toNode.params.showLeft) {
-                const distRL = r1_free.distanceTo(l2_free);
-                if (distRL < MAX_CONNECTION_DIST) {
-                    points.right.push(r1_free, l2_free);
-                }
-            }
-            if (fromNode.params.showLeft && toNode.params.showRight) {
-                const distLR = l1_free.distanceTo(r2_free);
-                if (distLR < MAX_CONNECTION_DIST) {
-                    points.left.push(l1_free, r2_free);
-                }
-            }
-        }
+        const type = edge.type || 'right_polarization';
+        const key = type === 'left_polarization' ? 'left' : (type === 's_loop' ? 's' : 'right');
+        points[key].push(p1, p2);
     });
 
     Object.keys(batchLines).forEach(k => {
@@ -526,7 +489,7 @@ function updateEdges() {
             let geo = new THREE.BufferGeometry().setFromPoints([pos1, pos2]);
             let lineColor = link.chirality > 0 ? 0x00ffcc : 0xff8800;
             if (link.sharedState) lineColor = 0xffaa00;
-            let mat = new THREE.LineBasicMaterial({ color: lineColor, transparent: true, opacity: 0.7 });
+            let mat = new THREE.LineBasicMaterial({ color: lineColor, transparent: true, opacity: 0.5 });
             let line = new THREE.Line(geo, mat);
             line.userData = { isChronoBridge: true };
             objectsGroup.add(line);
@@ -546,15 +509,13 @@ function drawAutoEdges() {
 
     if (graph.nodes.length > 50) return;
 
-    const threshold = 200;
+    const threshold = 150;
     const nodeIds = graph.nodes.map(n => n.id);
     for (let i = 0; i < nodeIds.length; i++) {
-        for (let j = 0; j < nodeIds.length; j++) {
-            if (i === j) continue;
+        for (let j = i + 1; j < nodeIds.length; j++) {
             const n1 = getNode(nodeIds[i]);
             const n2 = getNode(nodeIds[j]);
             if (!n1 || !n2) continue;
-            
             const hasEdge = graph.edges.some(e => (e.from === n1.id && e.to === n2.id) || (e.from === n2.id && e.to === n1.id));
             if (hasEdge) continue;
 
@@ -562,58 +523,28 @@ function drawAutoEdges() {
             const g2 = meshMap.get(n2.id);
             if (!g1 || !g2) continue;
 
-            const N1 = n1.params.N || 5, sc1 = n1.params.scale ?? 1.0, st1 = n1.params.stretch ?? 1.0;
-            const geom1 = getCachedSfiralGeometries(N1, sc1, st1, n1.params, n1.params.showRight, n1.params.showLeft);
-            
-            const N2 = n2.params.N || 5, sc2 = n2.params.scale ?? 1.0, st2 = n2.params.stretch ?? 1.0;
-            const geom2 = getCachedSfiralGeometries(N2, sc2, st2, n2.params, n2.params.showRight, n2.params.showLeft);
+            const exit1 = n1.exitPoint;
+            const entry2 = n2.entryPoint;
+            if (!exit1 || !entry2) continue;
 
-            const rot1 = n1.params.angles || [0, 0, 0];
-            const rot2 = n2.params.angles || [0, 0, 0];
-            const diffY = Math.abs((rot2[1] - rot1[1]) % 360);
-            const diffZ = Math.abs((rot2[2] - rot1[2]) % 360);
+            const exitWorld = new THREE.Vector3();
+            const entryWorld = new THREE.Vector3();
+            g1.localToWorld(exit1.clone(exitWorld));
+            g2.localToWorld(entry2.clone(entryWorld));
 
-            const isFlipped180 = (Math.abs(diffY - 180) < 5 || Math.abs(diffY - 540) < 5) && 
-                                 (Math.abs(diffZ - 180) < 5 || Math.abs(diffZ - 540) < 5);
-
-            const isNotFlipped = (diffY < 5 || Math.abs(diffY - 360) < 5) && 
-                                 (diffZ < 5 || Math.abs(diffZ - 360) < 5);
-
-            const r1_free = geom1.rightPts[0].clone().applyEuler(g1.rotation).add(g1.position);
-            const l1_free = geom1.leftPts[0].clone().applyEuler(g1.rotation).add(g1.position);
-
-            const r2_free = geom2.rightPts[0].clone().applyEuler(g2.rotation).add(g2.position);
-            const l2_free = geom2.leftPts[0].clone().applyEuler(g2.rotation).add(g2.position);
-
-            const checkPointsPairs = [];
-
-            if (isFlipped180) {
-                if (n1.params.showRight && n2.params.showRight) {
-                    checkPointsPairs.push({ p1: r1_free, p2: r2_free, color: 0xff3333 });
-                }
-                if (n1.params.showLeft && n2.params.showLeft) {
-                    checkPointsPairs.push({ p1: l1_free, p2: l2_free, color: 0x00c0ff });
-                }
-            } else if (isNotFlipped) {
-                if (n1.params.showRight && n2.params.showLeft) {
-                    checkPointsPairs.push({ p1: r1_free, p2: l2_free, color: 0xff3333 });
-                }
-                if (n1.params.showLeft && n2.params.showRight) {
-                    checkPointsPairs.push({ p1: l1_free, p2: r2_free, color: 0x00c0ff });
-                }
+            const dx = exitWorld.x - entryWorld.x;
+            const dy = exitWorld.y - entryWorld.y;
+            const dz = exitWorld.z - entryWorld.z;
+            const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            if (dist < threshold) {
+                const pts = [exitWorld, entryWorld];
+                const geo = new THREE.BufferGeometry().setFromPoints(pts);
+                const mat = new THREE.LineDashedMaterial({ color: 0x00ff88, dashSize: 5, gapSize: 3, transparent: true, opacity: 0.3 });
+                const line = new THREE.Line(geo, mat);
+                line.computeLineDistances();
+                objectsGroup.add(line);
+                autoEdgeLines.push(line);
             }
-
-            checkPointsPairs.forEach(pair => {
-                const dist = pair.p1.distanceTo(pair.p2);
-                if (dist < threshold) {
-                    const geo = new THREE.BufferGeometry().setFromPoints([pair.p1, pair.p2]);
-                    const mat = new THREE.LineDashedMaterial({ color: pair.color, dashSize: 6, gapSize: 3, transparent: true, opacity: 0.9 });
-                    const line = new THREE.Line(geo, mat);
-                    line.computeLineDistances();
-                    objectsGroup.add(line);
-                    autoEdgeLines.push(line);
-                }
-            });
         }
     }
 }
@@ -670,7 +601,7 @@ function updateSelectionHighlights() {
                     if (selectedPart && selectedPart !== part) child.material.opacity = 0.2;
                     else child.material.opacity = 1.0;
                 } else {
-                    child.material.opacity = 0.75;
+                    child.material.opacity = 0.6;
                 }
             }
         });
@@ -679,11 +610,17 @@ function updateSelectionHighlights() {
     if (selectedNodes.length === 1) {
         const targetGroup = meshMap.get(selectedNodes[0]);
         if (targetGroup) {
-            transformControls.attach(targetGroup);
+            let attachTarget = targetGroup;
+            if (selectedPart) {
+                targetGroup.children.forEach(child => {
+                    if (child.userData && child.userData.part === selectedPart) {
+                        attachTarget = child;
+                    }
+                });
+            }
+            transformControls.attach(attachTarget);
             const node = getNode(selectedNodes[0]);
             if (node) updateBottomBarValues(node);
-        } else {
-            transformControls.detach();
         }
     } else if (selectedNodes.length > 1) {
         let cx = 0, cy = 0, cz = 0;
@@ -706,6 +643,7 @@ function updateSelectionHighlights() {
     }
 }
 
+// Функция центрирования выбранных объектов или одиночной сфирали в (0,0,0)
 function centerSelectedToOrigin() {
     if (selectedNodes.length === 0) {
         alert('Выберите сфираль или группу для переноса в центр');
@@ -722,6 +660,7 @@ function centerSelectedToOrigin() {
     cy /= targetNodes.length; 
     cz /= targetNodes.length;
 
+    // Сдвигаем объекты так, чтобы их центр масс оказался в точке (0, 0, 0)
     targetNodes.forEach(node => {
         node.x -= cx;
         node.y -= cy;
@@ -756,7 +695,7 @@ function getObjectUnderMouse(clientX, clientY) {
 }
 
 // ============================================================
-// 7. ПЕРЕКЛЮЧЕНИЕ ПРОЕКЦИЙ ВИДОВ
+// 7. ПЕРЕКЛЮЧЕНИЕ ПРОЕКЦИЙ ВИДОВ (T, F, S, 3D)
 // ============================================================
 function switchView(view) {
     document.querySelectorAll('#view-tools button').forEach(b => b.classList.remove('view-active'));
@@ -768,10 +707,18 @@ function switchView(view) {
     const dist = 700;
 
     switch (view) {
-        case 'perspective': pos.set(600, 400, 800); break;
-        case 'top': pos.set(0, dist, 0.01); break;
-        case 'front': pos.set(0, 0, dist); break;
-        case 'side': pos.set(dist, 0, 0); break;
+        case 'perspective':
+            pos.set(600, 400, 800);
+            break;
+        case 'top':
+            pos.set(0, dist, 0.01);
+            break;
+        case 'front':
+            pos.set(0, 0, dist);
+            break;
+        case 'side':
+            pos.set(dist, 0, 0);
+            break;
     }
 
     camera.position.copy(pos);
@@ -780,7 +727,7 @@ function switchView(view) {
 }
 
 // ============================================================
-// 8. БУФЕР ОБМЕНА
+// 8. БУФЕР ОБМЕНА (КОПИРОВАНИЕ И ВСТАВКА)
 // ============================================================
 function saveState() {
     const state = {
@@ -874,7 +821,9 @@ function applyScaleAndStretchToNodes(nodeIds, newScale, newStretch) {
 
     let cx = 0, cy = 0, cz = 0;
     targetNodes.forEach(n => { cx += n.x; cy += n.y; cz += n.z; });
-    cx /= targetNodes.length; cy /= targetNodes.length; cz /= targetNodes.length;
+    cx /= targetNodes.length; 
+    cy /= targetNodes.length; 
+    cz /= targetNodes.length;
 
     const sampleNode = targetNodes[0];
     const oldScale = sampleNode.params.scale ?? 1.0;
@@ -904,12 +853,11 @@ function applyScaleAndStretchToNodes(nodeIds, newScale, newStretch) {
 }
 
 // ============================================================
-// 9. UI-МЕНЕДЖЕР И КВАНТОВЫЕ ВЕНТИЛИ (С ПОДДЕРЖКОЙ TOUCH)
+// 9. UI-МЕНЕДЖЕР
 // ============================================================
 class UIManager {
     constructor() {
         this.bindExistingToolButtons();
-        this.setupQuantumGates();
         this.setupEventListeners();
         this.setupKeyboardShortcuts();
     }
@@ -917,7 +865,7 @@ class UIManager {
     bindExistingToolButtons() {
         const transBtn = document.getElementById('toolTranslateBtn');
         const rotBtn = document.getElementById('toolRotateBtn');
-        const centerBtn = document.getElementById('toolCenterBtn');
+        const centerBtn = document.getElementById('toolCenterBtn'); // Кнопка "В центр"
 
         if (transBtn) {
             transBtn.classList.add('active');
@@ -945,58 +893,10 @@ class UIManager {
         }
 
         if (centerBtn) {
-            centerBtn.addEventListener('click', () => { centerSelectedToOrigin(); });
+            centerBtn.addEventListener('click', () => {
+                centerSelectedToOrigin();
+            });
         }
-    }
-
-    setupQuantumGates() {
-        document.getElementById('gateHadamard')?.addEventListener('click', () => {
-            if (selectedNodes.length === 0) { alert('Выберите сфираль'); return; }
-            saveState();
-            selectedNodes.forEach(id => {
-                const node = getNode(id);
-                if (node) { node.quantumState.intensity = 0.8; updateNodeVisual(node); }
-            });
-            updateEdges(); updateStats(); sendDataToPythonCore();
-        });
-
-        document.getElementById('gateSTransition')?.addEventListener('click', () => {
-            if (selectedNodes.length === 0) { alert('Выберите сфираль'); return; }
-            saveState();
-            selectedNodes.forEach(id => {
-                const node = getNode(id);
-                if (node) {
-                    const tempShow = node.params.showRight;
-                    node.params.showRight = node.params.showLeft;
-                    node.params.showLeft = tempShow;
-                    node.params.angles[2] = (node.params.angles[2] + 180) % 360;
-                    updateNodeVisual(node);
-                }
-            });
-            updateEdges(); updateStats(); sendDataToPythonCore();
-        });
-
-        document.getElementById('gateX')?.addEventListener('click', () => {
-            if (selectedNodes.length === 0) { alert('Выберите сфираль'); return; }
-            saveState();
-            selectedNodes.forEach(id => {
-                const node = getNode(id);
-                if (node) {
-                    const temp = node.params.showRight;
-                    node.params.showRight = node.params.showLeft;
-                    node.params.showLeft = temp;
-                    updateNodeVisual(node);
-                }
-            });
-            updateEdges(); updateStats(); sendDataToPythonCore();
-        });
-
-        document.getElementById('gateCNOT')?.addEventListener('click', () => {
-            if (selectedNodes.length !== 2) { alert('Выберите ровно две сфирали'); return; }
-            saveState();
-            const edge = addEdge(selectedNodes[0], selectedNodes[1], 1.0, 'right_polarization');
-            if (edge) { updateEdges(); updateStats(); sendDataToPythonCore(); }
-        });
     }
 
     setActiveTool(mode) {
@@ -1004,6 +904,7 @@ class UIManager {
         const rotBtn = document.getElementById('toolRotateBtn');
         if (transBtn) transBtn.classList.remove('active');
         if (rotBtn) rotBtn.classList.remove('active');
+
         if (mode === 'translate' && transBtn) transBtn.classList.add('active');
         if (mode === 'rotate' && rotBtn) rotBtn.classList.add('active');
     }
@@ -1036,57 +937,23 @@ class UIManager {
         document.getElementById('deleteBtn')?.addEventListener('click', deleteSelected);
         document.getElementById('connectBtn')?.addEventListener('click', connectSelected);
         document.getElementById('copyGroupBtn')?.addEventListener('click', copySelected);
+        document.getElementById('simulateBtn')?.addEventListener('click', simulateResonance);
+        document.getElementById('toggleWalshBtn')?.addEventListener('click', computeWalsh);
         document.getElementById('saveModelBtn')?.addEventListener('click', saveModel);
         document.getElementById('loadModelBtn')?.addEventListener('click', () => document.getElementById('fileInput').click());
         document.getElementById('fileInput')?.addEventListener('change', loadModel);
         document.getElementById('fractalPresetBtn')?.addEventListener('click', buildFractalComposition);
 
         document.querySelectorAll('#view-tools button[data-view]').forEach(btn => {
-            btn.addEventListener('click', () => { switchView(btn.getAttribute('data-view')); });
+            btn.addEventListener('click', () => {
+                switchView(btn.getAttribute('data-view'));
+            });
         });
 
         this.setupMouseSelection();
     }
 
     setupMouseSelection() {
-        let touchDownPos = { x: 0, y: 0 };
-        let touchDownObjectId = null;
-        let touchDownPart = null;
-
-        renderer.domElement.addEventListener('touchstart', (e) => {
-            if (e.touches.length === 1) {
-                const touch = e.touches[0];
-                touchDownPos.x = touch.clientX;
-                touchDownPos.y = touch.clientY;
-                const hitData = getObjectUnderMouse(touch.clientX, touch.clientY);
-                touchDownObjectId = hitData ? hitData.nodeId : null;
-                touchDownPart = hitData ? hitData.part : null;
-            }
-        }, { passive: true });
-
-        renderer.domElement.addEventListener('touchend', (e) => {
-            if (e.changedTouches.length === 1) {
-                const touch = e.changedTouches[0];
-                const dx = touch.clientX - touchDownPos.x;
-                const dy = touch.clientY - touchDownPos.y;
-                if (Math.sqrt(dx * dx + dy * dy) < 10) {
-                    if (touchDownObjectId !== null) {
-                        const id = touchDownObjectId;
-                        selectedNodes = [id];
-                        selectedPart = touchDownPart;
-                        updateSelectionHighlights();
-                        renderProperties(id);
-                    } else if (!transformControls.dragging) {
-                        selectedNodes = [];
-                        selectedPart = null;
-                        transformControls.detach();
-                        updateSelectionHighlights();
-                        renderProperties(null);
-                    }
-                }
-            }
-        }, { passive: true });
-
         const selectionRect = document.getElementById('selectionRect');
         let mouseDownPos = { x: 0, y: 0 };
         let mouseDownObjectId = null;
@@ -1096,6 +963,7 @@ class UIManager {
 
         renderer.domElement.addEventListener('pointerdown', (e) => {
             if (e.button !== 0) return;
+
             document.getElementById('moveDialogModal').style.display = 'none';
             document.getElementById('rotateDialogModal').style.display = 'none';
 
@@ -1220,10 +1088,19 @@ class UIManager {
                     let targetStretch = sampleNode.params.stretch ?? 1.0;
                     let changed = false;
 
-                    if (key === '=' || key === '+') { targetScale = Math.min(10.0, targetScale + 0.1); changed = true; }
-                    else if (key === '-' || key === '_') { targetScale = Math.max(0.1, targetScale - 0.1); changed = true; }
-                    else if (key === ']') { targetStretch = Math.min(5.0, targetStretch + 0.1); changed = true; }
-                    else if (key === '[') { targetStretch = Math.max(0.1, targetStretch - 0.1); changed = true; }
+                    if (key === '=' || key === '+') {
+                        targetScale = Math.min(10.0, targetScale + 0.1);
+                        changed = true;
+                    } else if (key === '-' || key === '_') {
+                        targetScale = Math.max(0.1, targetScale - 0.1);
+                        changed = true;
+                    } else if (key === ']') {
+                        targetStretch = Math.min(5.0, targetStretch + 0.1);
+                        changed = true;
+                    } else if (key === '[') {
+                        targetStretch = Math.max(0.1, targetStretch - 0.1);
+                        changed = true;
+                    }
 
                     if (changed) {
                         e.preventDefault();
@@ -1238,19 +1115,28 @@ class UIManager {
                 }
             }
 
-            if (e.ctrlKey && key === 'c') { e.preventDefault(); copySelected(); }
-            else if (e.ctrlKey && key === 'v') { e.preventDefault(); pasteClipboard(); }
-            else if (e.key === 'Delete' || e.key === 'Del') { e.preventDefault(); deleteSelected(); }
-            else if (e.key === 'Escape') {
-                selectedNodes = []; selectedPart = null;
-                transformControls.detach(); updateSelectionHighlights(); renderProperties(null);
+            if (e.ctrlKey && key === 'c') {
+                e.preventDefault();
+                copySelected();
+            } else if (e.ctrlKey && key === 'v') {
+                e.preventDefault();
+                pasteClipboard();
+            } else if (e.key === 'Delete' || e.key === 'Del') {
+                e.preventDefault();
+                deleteSelected();
+            } else if (e.key === 'Escape') {
+                selectedNodes = [];
+                selectedPart = null;
+                transformControls.detach();
+                updateSelectionHighlights();
+                renderProperties(null);
             }
         }, true);
     }
 }
 
 // ============================================================
-// 10. ОБРАБОТЧИКИ ДЕЙСТВИЙ
+// 10. ОБРАБОТЧИКИ ДЕЙСТВИЙ (И ЖИВОЙ ВВОД ДЛЯ ГРУПП И ОДИНОЧНЫХ)
 // ============================================================
 function updateBottomBarValues(node) {
     if (!node) return;
@@ -1272,7 +1158,9 @@ function applyModalPositionLive() {
         if (!isNaN(px)) node.x = px;
         if (!isNaN(py)) node.y = py;
         if (!isNaN(pz)) node.z = pz;
-        updateNodeVisual(node); updateBottomBarValues(node); updateEdges();
+        updateNodeVisual(node);
+        updateBottomBarValues(node);
+        updateEdges();
     } else {
         let cx = 0, cy = 0, cz = 0;
         const targetNodes = selectedNodes.map(nid => getNode(nid)).filter(Boolean);
@@ -1282,11 +1170,16 @@ function applyModalPositionLive() {
         const targetX = !isNaN(px) ? px : cx;
         const targetY = !isNaN(py) ? py : cy;
         const targetZ = !isNaN(pz) ? pz : cz;
-        const dx = targetX - cx, dy = targetY - cy, dz = targetZ - cz;
+
+        const dx = targetX - cx;
+        const dy = targetY - cy;
+        const dz = targetZ - cz;
 
         if (dx !== 0 || dy !== 0 || dz !== 0) {
             targetNodes.forEach(node => {
-                node.x += dx; node.y += dy; node.z += dz;
+                node.x += dx;
+                node.y += dy;
+                node.z += dz;
                 updateNodeVisual(node);
             });
             updateEdges();
@@ -1313,7 +1206,8 @@ function applyModalRotationLive() {
             THREE.MathUtils.degToRad(node.params.angles[1]),
             THREE.MathUtils.degToRad(node.params.angles[2])
         );
-        updateBottomBarValues(node); updateEdges();
+        updateBottomBarValues(node);
+        updateEdges();
     } else {
         let cx = 0, cy = 0, cz = 0;
         const targetNodes = selectedNodes.map(nid => getNode(nid)).filter(Boolean);
@@ -1322,6 +1216,7 @@ function applyModalRotationLive() {
 
         const firstNode = targetNodes[0];
         const curRot = firstNode.params.angles || [0, 0, 0];
+        
         const targetRx = !isNaN(rx) ? rx : curRot[0];
         const targetRy = !isNaN(ry) ? ry : curRot[1];
         const targetZ = !isNaN(rz) ? rz : curRot[2];
@@ -1336,6 +1231,7 @@ function applyModalRotationLive() {
         targetNodes.forEach(node => {
             const group = meshMap.get(node.id);
             if (!group) return;
+
             const v = new THREE.Vector3(node.x, node.y, node.z).sub(new THREE.Vector3(cx, cy, cz));
             v.applyQuaternion(quatDelta);
             v.add(new THREE.Vector3(cx, cy, cz));
@@ -1360,6 +1256,7 @@ function openMoveDialog() {
         const targetNodes = selectedNodes.map(nid => getNode(nid)).filter(Boolean);
         targetNodes.forEach(n => { cx += n.x; cy += n.y; cz += n.z; });
         cx /= targetNodes.length; cy /= targetNodes.length; cz /= targetNodes.length;
+
         document.getElementById('modalPosX').value = Math.round(cx);
         document.getElementById('modalPosY').value = Math.round(cy);
         document.getElementById('modalPosZ').value = Math.round(cz);
@@ -1382,15 +1279,16 @@ function openRotateDialog() {
 
 function addNodeHandler() {
     saveState();
-    let nextX = 0, nextZ = 0;
-    if (graph.nodes.length > 0) {
-        const lastNode = graph.nodes[graph.nodes.length - 1];
-        nextX = lastNode.x - 140; nextZ = lastNode.z - 180;
-    }
-    const node = addNode('Single', nextX, 0, nextZ, { N: 5, target_len: 1000, scale: 1.0, stretch: 1.0, angles: [0, 0, 0] });
-    updateNodeVisual(node); updateEdges(); updateStats();
-    selectedNodes = [node.id]; selectedPart = null;
-    updateSelectionHighlights(); renderProperties(node.id); sendDataToPythonCore();
+    const count = graph.nodes.length;
+    const node = addNode('Single', (count % 5 - 2) * 80, Math.floor(count / 5) * 80, 0, { N: 5, target_len: 1000, scale: 1.0, stretch: 1.0, angles: [0, 0, 0] });
+    updateNodeVisual(node);
+    updateEdges();
+    updateStats();
+    selectedNodes = [node.id];
+    selectedPart = null;
+    updateSelectionHighlights();
+    renderProperties(node.id);
+    sendDataToPythonCore();
 }
 
 function deleteSelected() {
@@ -1405,8 +1303,11 @@ function deleteSelected() {
             else if (selectedPart === 'left') node.params.showLeft = false;
             else if (selectedPart === 'sLeft') node.params.showSLeft = false;
 
-            updateNodeVisual(node); selectedPart = null;
-            updateSelectionHighlights(); renderProperties(node.id); sendDataToPythonCore();
+            updateNodeVisual(node);
+            selectedPart = null;
+            updateSelectionHighlights();
+            renderProperties(node.id);
+            sendDataToPythonCore();
             return;
         }
     }
@@ -1415,9 +1316,14 @@ function deleteSelected() {
         removeNode(id);
         if (meshMap.has(id)) { objectsGroup.remove(meshMap.get(id)); meshMap.delete(id); }
     });
-    selectedNodes = []; selectedPart = null; transformControls.detach();
-    updateEdges(); updateStats(); renderProperties(null);
-    updateSelectionHighlights(); sendDataToPythonCore();
+    selectedNodes = [];
+    selectedPart = null;
+    transformControls.detach();
+    updateEdges();
+    updateStats();
+    renderProperties(null);
+    updateSelectionHighlights();
+    sendDataToPythonCore();
 }
 
 function connectSelected() {
@@ -1425,7 +1331,7 @@ function connectSelected() {
         saveState();
         const edge = addEdge(selectedNodes[0], selectedNodes[1], 1.0, 'right_polarization');
         if (edge) { updateEdges(); updateStats(); sendDataToPythonCore(); }
-        else { alert('Связь уже существует'); }
+        else alert('Связь уже существует');
     } else {
         alert('Выделите ровно две сфирали');
     }
@@ -1435,20 +1341,34 @@ function buildSingleInitialSfiral() {
     saveState();
     graph.nodes = []; graph.edges = []; nextId = 1;
     const node = addNode('Single', 0, 0, 0, { N: 5, target_len: 1000, scale: 1.0, stretch: 1.0, angles: [0, 0, 0] });
-    updateAllNodes(); selectedNodes = [node.id]; selectedPart = null;
-    updateSelectionHighlights(); renderProperties(node.id); sendDataToPythonCore();
+    updateAllNodes();
+    selectedNodes = [node.id];
+    selectedPart = null;
+    updateSelectionHighlights();
+    renderProperties(node.id);
+    sendDataToPythonCore();
 }
 
 function buildFractalComposition() {
     saveState();
     graph.nodes = []; graph.edges = []; nextId = 1;
     const n1 = addNode('Single', 0, 0, 0, { N: 5, target_len: 1000, scale: 1.0, stretch: 1.0, angles: [0, 0, 0] });
-    const n2 = addNode('Single', -140, 0, -180, { N: 5, target_len: 1000, scale: 1.0, stretch: 1.0, angles: [0, 0, 0] });
+    const n2 = addNode('Single', 0, 35, 45, { N: 5, target_len: 500, scale: 0.5, stretch: 1.0, angles: [0, 0, 0] });
     addEdge(n1.id, n2.id, 1.0, 'right_polarization');
-    updateAllNodes(); selectedNodes = [n1.id]; selectedPart = null;
-    updateSelectionHighlights(); renderProperties(n1.id); sendDataToPythonCore();
+    updateAllNodes();
+    selectedNodes = [n1.id];
+    selectedPart = null;
+    updateSelectionHighlights();
+    renderProperties(n1.id);
+    sendDataToPythonCore();
 }
 
+function simulateResonance() {}
+function computeWalsh() {}
+
+// ============================================================
+// 💾 СОХРАНЕНИЕ И ЗАГРУЗКА МОДЕЛЕЙ (.json)
+// ============================================================
 function saveModel() {
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(graph, null, 2));
     const downloadAnchor = document.createElement('a');
@@ -1462,6 +1382,7 @@ function saveModel() {
 function loadModel(e) {
     const file = e.target.files[0];
     if (!file) return;
+
     const reader = new FileReader();
     reader.onload = function(event) {
         try {
@@ -1470,11 +1391,18 @@ function loadModel(e) {
                 saveState();
                 graph.nodes = loadedData.nodes;
                 graph.edges = Array.isArray(loadedData.edges) ? loadedData.edges : [];
+                
+                // Вычисляем следующий безопасный ID для новых узлов
                 let maxId = 0;
                 graph.nodes.forEach(n => { if (n.id > maxId) maxId = n.id; });
                 nextId = maxId + 1;
-                updateAllNodes(); selectedNodes = []; selectedPart = null;
-                transformControls.detach(); renderProperties(null); sendDataToPythonCore();
+
+                updateAllNodes();
+                selectedNodes = [];
+                selectedPart = null;
+                transformControls.detach();
+                renderProperties(null);
+                sendDataToPythonCore();
                 alert('📦 Модель успешно загружена!');
             } else {
                 alert('⚠️ Ошибка: Неверный формат файла модели.');
@@ -1483,6 +1411,7 @@ function loadModel(e) {
             console.error(err);
             alert('❌ Не удалось прочитать JSON-файл.');
         }
+        // Сбрасываем значение инпута, чтобы можно было загрузить тот же файл повторно
         e.target.value = '';
     };
     reader.readAsText(file);
@@ -1510,12 +1439,16 @@ function renderProperties(id) {
 
         document.getElementById('groupScale').addEventListener('input', (e) => {
             const sc = parseFloat(e.target.value);
-            if (!isNaN(sc)) { applyScaleAndStretchToNodes(selectedNodes, sc, undefined); }
+            if (!isNaN(sc)) {
+                applyScaleAndStretchToNodes(selectedNodes, sc, undefined);
+            }
         });
 
         document.getElementById('groupStretch').addEventListener('input', (e) => {
             const st = parseFloat(e.target.value);
-            if (!isNaN(st)) { applyScaleAndStretchToNodes(selectedNodes, undefined, st); }
+            if (!isNaN(st)) {
+                applyScaleAndStretchToNodes(selectedNodes, undefined, st);
+            }
         });
         return;
     }
@@ -1538,28 +1471,35 @@ function renderProperties(id) {
             <div class="prop-group"><label>Сжатие по высоте (%)</label><input type="number" id="subHeight" value="${sub.height}" min="10" max="500" step="5" /></div>
         `;
 
-        document.getElementById('subHeight').addEventListener('input', () => {
+        const updateSubPartLive = () => {
             const h = parseFloat(document.getElementById('subHeight').value);
             if (!isNaN(h)) sub.height = h;
-            updateNodeVisual(node); updateEdges();
-        });
+            updateNodeVisual(node);
+            updateEdges();
+        };
+
+        document.getElementById('subHeight').addEventListener('input', updateSubPartLive);
         return;
     }
 
     container.innerHTML = `
         <div class="prop-group highlight">📦 Сфираль [ID: ${node.id}]</div>
-        <div class="prop-group"><label>Общий масштаб (+ / -)</label><input type="number" id="propScale" value="${p.scale ?? 1.0}" min="0.1" max="10.0" step="0.1" /></div>
+        <div class="prop-group"><label>Общий масштаб (+ / -)</label><input type="number" id="propScale" value="${p.scale ?? 1.0}" min="0.1" max0="10.0" step="0.1" /></div>
         <div class="prop-group"><label>Пружина / Растяжение Z (] / [)</label><input type="number" id="propStretch" value="${p.stretch ?? 1.0}" min="0.1" max="5.0" step="0.1" /></div>
     `;
 
     document.getElementById('propScale').addEventListener('input', (e) => {
         const sc = parseFloat(e.target.value);
-        if (!isNaN(sc)) { applyScaleAndStretchToNodes([node.id], sc, undefined); }
+        if (!isNaN(sc)) { 
+            applyScaleAndStretchToNodes([node.id], sc, undefined);
+        }
     });
 
     document.getElementById('propStretch').addEventListener('input', (e) => {
         const st = parseFloat(e.target.value);
-        if (!isNaN(st)) { applyScaleAndStretchToNodes([node.id], undefined, st); }
+        if (!isNaN(st)) { 
+            applyScaleAndStretchToNodes([node.id], undefined, st);
+        }
     });
 }
 
