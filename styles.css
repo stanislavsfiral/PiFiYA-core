@@ -195,15 +195,16 @@ body {
 .help-section h3 { color: var(--accent-green); font-size: 0.9rem; margin-bottom: 4px; }
 .help-trigger-btn { background: rgba(16,23,38,0.9); color: var(--accent-cyan); border: 1px solid var(--accent-cyan); border-radius: 50%; width: 36px; height: 36px; font-size: 1rem; cursor: pointer; z-index: 20; }
 
-/* Стили для туториала (обучения) */
+/* Стили для туториала (обучения) — исправлено прижатие к низу, чтобы не закрывать верхний тулбар */
 .tutorial-overlay {
     position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh;
-    background: rgba(7, 10, 17, 0.85); backdrop-filter: blur(6px);
-    z-index: 10000; display: flex; justify-content: center; align-items: center; padding: 20px;
+    background: rgba(7, 10, 17, 0.75); backdrop-filter: blur(6px);
+    z-index: 10000; display: flex; justify-content: center; align-items: flex-end; padding: 16px;
 }
 .tutorial-card {
     background: #131b2e; border: 1px solid #00e5ff; border-radius: 12px;
-    padding: 20px; width: 100%; max-width: 340px; box-shadow: 0 10px 30px rgba(0, 229, 255, 0.2);
+    padding: 16px; width: 100%; max-width: 380px; max-height: 45vh; overflow-y: auto;
+    box-shadow: 0 10px 30px rgba(0, 229, 255, 0.3); margin-bottom: 24px;
 }
 
 @media (max-width: 640px) {
