@@ -48,9 +48,6 @@ class SfiralComputeHandler(http.server.SimpleHTTPRequestHandler):
                 angles = params.get('angles', [0, 0, 0])
                 x, y, z = node.get('x', 0), node.get('y', 0), node.get('z', 0)
                 
-                # Поддержка кастомных квантовых вентилей и троичных состояний
-                gate_type = params.get('activeGate', 'H')
-                
                 if show_right and not show_left:
                     pos_count += 1
                     node_signals.append(1.0)
@@ -61,21 +58,16 @@ class SfiralComputeHandler(http.server.SimpleHTTPRequestHandler):
                     zero_count += 1
                     node_signals.append(0.0)
 
-                # Пространственный фазовый набег с учетом типа вентиля
+                # Пространственный фазовый набег на основе координат и углов YZ
                 phi_spatial = np.radians(angles[1] + angles[2]) + (np.sqrt(x**2 + y**2 + z**2) / 1000.0)
+                phase_tensor = np.exp(1j * phi_spatial)
                 
-                if gate_type == 'S_TRANSITION':
-                    # Топологический S-переход: плавная инверсия фазы без разрыва потока
-                    phase_tensor = np.exp(1j * (phi_spatial + np.pi / 3))
-                else:
-                    phase_tensor = np.exp(1j * phi_spatial)
-                
-                # Применение матричного преобразования в 3D пространстве
+                # Применение модифицированного вентиля H в 3D пространстве
                 state_vector = np.array([1.0, 0.0], dtype=complex)
                 transformed_state = np.dot(H_matrix, state_vector) * phase_tensor
                 
                 psi_real = float(np.real(transformed_state[0]))
-                psi_imag = float(np.imag(transformed_state[1]))
+                psi_imag = float(np.imag(transformed_state[0]))
                 intensity = float(np.abs(transformed_state[0])**2 + np.abs(transformed_state[1])**2)
                 total_intensity += intensity
 
@@ -83,8 +75,7 @@ class SfiralComputeHandler(http.server.SimpleHTTPRequestHandler):
                     "id": node.get('id'),
                     "psi_real": round(psi_real, 4),
                     "psi_imag": round(psi_imag, 4),
-                    "intensity": round(intensity, 4),
-                    "activeGate": gate_type
+                    "intensity": round(intensity, 4)
                 })
 
             if total_nodes > 0:
