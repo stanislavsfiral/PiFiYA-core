@@ -68,6 +68,7 @@ function addNode(mode, x, y, z, params) {
             scale: params?.scale !== undefined ? params.scale : 1.0,
             stretch: params?.stretch !== undefined ? params.stretch : 1.0,
             angles: params?.angles ? [...params.angles] : [0, 0, 0],
+            activeGate: params?.activeGate || 'H',
             showRight: params?.showRight !== undefined ? params.showRight : true,
             showS: params?.showS !== undefined ? params.showS : true,
             showLeft: params?.showLeft !== undefined ? params.showLeft : true,
@@ -112,12 +113,8 @@ function autoConnectStuckNodes() {
 function compileTopologyToQuantumCircuit() {
     let circuitGates = [];
     graph.nodes.forEach(node => {
-        const angles = node.params.angles || [0, 0, 0];
-        if (angles[2] % 180 === 0 && angles[2] !== 0) {
-            circuitGates.push(`S(q${node.id})`);
-        } else {
-            circuitGates.push(`H(q${node.id})`);
-        }
+        const gate = node.params.activeGate || 'H';
+        circuitGates.push(`${gate}(q${node.id})`);
     });
     graph.edges.forEach(edge => {
         circuitGates.push(`CNOT(q${edge.from}, q${edge.to})`);
@@ -173,7 +170,7 @@ const sendDataPythonCoreThrottled = () => {
 // ============================================================
 const container = document.getElementById('canvasContainer');
 const canvas = document.getElementById('renderCanvas');
-canvas.style.touchAction = 'none'; // Отключаем дефолтный скролл браузера для корректного тач-управления
+canvas.style.touchAction = 'none';
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -838,6 +835,7 @@ function pasteClipboard() {
             scale: src.params.scale,
             stretch: src.params.stretch,
             angles: [...src.params.angles],
+            activeGate: src.params.activeGate,
             showRight: src.params.showRight,
             showS: src.params.showS,
             showLeft: src.params.showLeft,
@@ -957,7 +955,11 @@ class UIManager {
             saveState();
             selectedNodes.forEach(id => {
                 const node = getNode(id);
-                if (node) { node.quantumState.intensity = 0.8; updateNodeVisual(node); }
+                if (node) {
+                    node.params.activeGate = 'H';
+                    node.quantumState.intensity = 0.8;
+                    updateNodeVisual(node);
+                }
             });
             updateEdges(); updateStats(); sendDataToPythonCore();
         });
@@ -968,6 +970,7 @@ class UIManager {
             selectedNodes.forEach(id => {
                 const node = getNode(id);
                 if (node) {
+                    node.params.activeGate = 'S_TRANSITION';
                     const tempShow = node.params.showRight;
                     node.params.showRight = node.params.showLeft;
                     node.params.showLeft = tempShow;
@@ -984,6 +987,7 @@ class UIManager {
             selectedNodes.forEach(id => {
                 const node = getNode(id);
                 if (node) {
+                    node.params.activeGate = 'X';
                     const temp = node.params.showRight;
                     node.params.showRight = node.params.showLeft;
                     node.params.showLeft = temp;
@@ -1055,7 +1059,6 @@ class UIManager {
         let touchTimer = null;
         let isLongPress = false;
 
-        // Поддержка долгого нажатия для мобилок (открытие меню поворота/перемещения)
         renderer.domElement.addEventListener('touchstart', (e) => {
             if (e.touches.length === 1) {
                 const touch = e.touches[0];
@@ -1071,7 +1074,7 @@ class UIManager {
                         selectedPart = hitData.part;
                         updateSelectionHighlights();
                         renderProperties(hitData.nodeId);
-                        openRotateDialog(); // Открываем меню поворота долгим тапом
+                        openRotateDialog();
                     }, 650);
                 }
             }
@@ -1101,7 +1104,6 @@ class UIManager {
         let boxStart = { x: 0, y: 0 };
 
         renderer.domElement.addEventListener('pointerdown', (e) => {
-            // Клик ПКМ на ПК — открытие модального окна поворота
             if (e.button === 2) {
                 e.preventDefault();
                 const hitData = getObjectUnderMouse(e.clientX, e.clientY);
@@ -1126,7 +1128,6 @@ class UIManager {
             mouseDownPart = hitData ? hitData.part : null;
             isBoxSelecting = false;
 
-            // Рамка выделения работает ТОЛЬКО если включена соответствующая кнопка
             if (window.isBoxSelectMode && mouseDownObjectId === null && !transformControls.dragging) {
                 isBoxSelecting = true;
                 boxStart.x = e.clientX;
@@ -1408,7 +1409,7 @@ function addNodeHandler() {
         const lastNode = graph.nodes[graph.nodes.length - 1];
         nextX = lastNode.x - 140; nextZ = lastNode.z - 180;
     }
-    const node = addNode('Single', nextX, 0, nextZ, { N: 5, target_len: 1000, scale: 1.0, stretch: 1.0, angles: [0, 0, 0] });
+    const node = addNode('Single', nextX, 0, nextZ, { N: 5, target_len: 1000, scale: 1.0, stretch: 1.0, angles: [0, 0, 0], activeGate: 'H' });
     updateNodeVisual(node); updateEdges(); updateStats();
     selectedNodes = [node.id]; selectedPart = null;
     updateSelectionHighlights(); renderProperties(node.id); sendDataToPythonCore();
@@ -1455,7 +1456,7 @@ function connectSelected() {
 function buildSingleInitialSfiral() {
     saveState();
     graph.nodes = []; graph.edges = []; nextId = 1;
-    const node = addNode('Single', 0, 0, 0, { N: 5, target_len: 1000, scale: 1.0, stretch: 1.0, angles: [0, 0, 0] });
+    const node = addNode('Single', 0, 0, 0, { N: 5, target_len: 1000, scale: 1.0, stretch: 1.0, angles: [0, 0, 0], activeGate: 'H' });
     updateAllNodes(); selectedNodes = [node.id]; selectedPart = null;
     updateSelectionHighlights(); renderProperties(node.id); sendDataToPythonCore();
 }
@@ -1463,8 +1464,8 @@ function buildSingleInitialSfiral() {
 function buildFractalComposition() {
     saveState();
     graph.nodes = []; graph.edges = []; nextId = 1;
-    const n1 = addNode('Single', 0, 0, 0, { N: 5, target_len: 1000, scale: 1.0, stretch: 1.0, angles: [0, 0, 0] });
-    const n2 = addNode('Single', -140, 0, -180, { N: 5, target_len: 1000, scale: 1.0, stretch: 1.0, angles: [0, 0, 0] });
+    const n1 = addNode('Single', 0, 0, 0, { N: 5, target_len: 1000, scale: 1.0, stretch: 1.0, angles: [0, 0, 0], activeGate: 'H' });
+    const n2 = addNode('Single', -140, 0, -180, { N: 5, target_len: 1000, scale: 1.0, stretch: 1.0, angles: [0, 0, 0], activeGate: 'H' });
     addEdge(n1.id, n2.id, 1.0, 'right_polarization');
     updateAllNodes(); selectedNodes = [n1.id]; selectedPart = null;
     updateSelectionHighlights(); renderProperties(n1.id); sendDataToPythonCore();
@@ -1567,11 +1568,27 @@ function renderProperties(id) {
         return;
     }
 
+    const activeGate = p.activeGate || 'H';
     container.innerHTML = `
         <div class="prop-group highlight">📦 Сфираль [ID: ${node.id}]</div>
+        <div class="prop-group">
+            <label>Квантовый вентиль (КудИТ)</label>
+            <select id="nodeGateSelect" style="width:100%; background:#1f2d4a; color:#fff; padding:4px; border-radius:4px; font-size:0.75rem;">
+                <option value="H" ${activeGate === 'H' ? 'selected' : ''}>H (Адамар / Супериор)</option>
+                <option value="S_TRANSITION" ${activeGate === 'S_TRANSITION' ? 'selected' : ''}>S_TRANSITION (Топологический S-переход)</option>
+                <option value="X" ${activeGate === 'X' ? 'selected' : ''}>X (Инверсия витков)</option>
+            </select>
+        </div>
         <div class="prop-group"><label>Общий масштаб (+ / -)</label><input type="number" id="propScale" value="${p.scale ?? 1.0}" min="0.1" max="10.0" step="0.1" /></div>
         <div class="prop-group"><label>Пружина / Растяжение Z (] / [)</label><input type="number" id="propStretch" value="${p.stretch ?? 1.0}" min="0.1" max="5.0" step="0.1" /></div>
     `;
+
+    document.getElementById('nodeGateSelect')?.addEventListener('change', (e) => {
+        node.params.activeGate = e.target.value;
+        saveState();
+        updateNodeVisual(node);
+        sendDataToPythonCore();
+    });
 
     document.getElementById('propScale').addEventListener('input', (e) => {
         const sc = parseFloat(e.target.value);

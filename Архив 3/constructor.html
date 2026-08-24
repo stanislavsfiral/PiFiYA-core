@@ -95,14 +95,14 @@
             <button id="toolRotateBtn" class="tool-btn" style="font-size:0.6rem;">↻</button>
         </div>
 
-        <!-- Кнопка включения рамки выделения (чтобы не мешать вращению моделью одним пальцем на телефоне) -->
+        <!-- Кнопка включения рамки выделения -->
         <button id="boxSelectToggleBtn" title="Включить/выключить режим рамки выделения">🔲 Рамка: ВЫКЛ</button>
 
         <!-- ====== ПАНЕЛЬ КВАНТОВЫХ ВЕНТИЛЕЙ ====== -->
         <div id="quantumGatesPanel" class="ibm-gates-toolbar" style="position:absolute; top:105px; right:12px; z-index:25;">
             <span style="color: var(--text-dim); font-size: 0.65rem; margin-right: 2px;">Вентили:</span>
             <button class="ibm-gate-btn gate-h" id="gateHadamard" title="H-вентиль">H</button>
-            <button class="ibm-gate-btn gate-s" id="gateSTransition" title="S-вентиль">S</button>
+            <button class="ibm-gate-btn gate-s" id="gateSTransition" title="S-вентиль (Топологический S-переход)">S⚡</button>
             <button class="ibm-gate-btn gate-x" id="gateNot" title="X-вентиль">X</button>
             <button class="ibm-gate-btn gate-cx" id="gateCNOT" title="CNOT">⊕</button>
         </div>
@@ -181,11 +181,11 @@
                 </div>
                 <div class="help-modal-body" style="font-size:0.85rem; line-height:1.4;">
                     <div class="help-section">
-                        <h3>🛠️ Управление и навигация на телефоне</h3>
+                        <h3>🛠️ Управление и навигация</h3>
                         <p>
-                            • <b>Вращение модели:</b> Проведите одним пальцем по экрану.<br>
-                            • <b>Зум (приближение):</b> Сделайте жест «щипок» двумя пальцами.<br>
-                            • <b>Рамка выделения:</b> Включите кнопку <b>«🔲 Рамка: ВКЛ»</b> в левом верхнем углу холста, чтобы выделить несколько объектов рамкой.
+                            • <b>Вращение модели:</b> Проведите правой кнопкой мыши (или одним пальцем) по экрану[cite: 13].<br>
+                            • <b>Зум (приближение):</b> Используйте колесико мыши или жест «щипок»[cite: 13].<br>
+                            • <b>Рамка выделения:</b> Включите кнопку <b>«🔲 Рамка: ВКЛ»</b> в левом верхнем углу холста, чтобы выделить несколько объектов рамкой[cite: 13].
                         </p>
                     </div>
                 </div>
@@ -216,7 +216,6 @@
         document.getElementById('propertiesPanel').classList.remove('active');
     });
 
-    // Интеграция переключения режима рамки выделения для editor.js
     window.isBoxSelectMode = false;
     const boxBtn = document.getElementById('boxSelectToggleBtn');
     boxBtn.addEventListener('click', () => {

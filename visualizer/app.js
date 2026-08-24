@@ -37,9 +37,17 @@ function init3D() {
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
 
+    // Настройка контроллеров камеры: вращение строго вокруг центра по ПРАВОЙ кнопке мыши (ПКМ)
     controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
+    controls.target.set(0, 0, 0); // Фокус вращения в центре модели
+
+    controls.mouseButtons = {
+        LEFT: THREE.MOUSE.NONE,     // Левая кнопка не вращает камеру
+        MIDDLE: THREE.MOUSE.DOLLY,  // Зум колесиком
+        RIGHT: THREE.MOUSE.ROTATE   // Вращение камеры по ПКМ
+    };
 
     scene.add(new THREE.AmbientLight(0xffffff, 0.9));
 

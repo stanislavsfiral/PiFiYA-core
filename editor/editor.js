@@ -124,8 +124,8 @@ function compileTopologyToQuantumCircuit() {
     if (consoleEl && graph.nodes.length > 0) {
         consoleEl.style.display = 'block';
         consoleEl.innerHTML += `
-            <div class="line success">🧬 [Авто-Компилятор схемы]: Сгенерирован квантовый пайплайн</div>
-            <div class="line">🛠️ [Цепочка вентилей]: ${circuitGates.join(' — ')}</div>
+            <div class="line success">🧬 [Авто-Компилятор схемы]: Сгенерирован квантовый пайплайн[cite: 13]</div>
+            <div class="line">🛠️ [Цепочка вентилей]: ${circuitGates.join(' — ')}[cite: 13]</div>
         `;
     }
 }
@@ -151,12 +151,12 @@ async function sendDataToPythonCore() {
             const consoleEl = document.getElementById('console');
             if (consoleEl) {
                 consoleEl.style.display = 'block';
-                consoleEl.innerHTML += `<div class="line success">⚡ [Ядро онлайн]: Сфиралей обработано: ${result.computed_nodes}</div>`;
+                consoleEl.innerHTML += `<div class="line success">⚡ [Ядро онлайн]: Сфиралей обработано: ${result.computed_nodes}[cite: 13]</div>`;
             }
             compileTopologyToQuantumCircuit();
         }
     } catch (err) {
-        console.warn("⚠️ Локальное ядро не отвечает.");
+        console.warn("⚠️ Локальное ядро не отвечает[cite: 13].");
     }
 }
 
@@ -1453,14 +1453,6 @@ function connectSelected() {
     }
 }
 
-function buildSingleInitialSfiral() {
-    saveState();
-    graph.nodes = []; graph.edges = []; nextId = 1;
-    const node = addNode('Single', 0, 0, 0, { N: 5, target_len: 1000, scale: 1.0, stretch: 1.0, angles: [0, 0, 0], activeGate: 'H' });
-    updateAllNodes(); selectedNodes = [node.id]; selectedPart = null;
-    updateSelectionHighlights(); renderProperties(node.id); sendDataToPythonCore();
-}
-
 function buildFractalComposition() {
     saveState();
     graph.nodes = []; graph.edges = []; nextId = 1;
@@ -1549,7 +1541,7 @@ function renderProperties(id) {
     if (selectedPart) {
         let subKey = 'rightSub';
         if (selectedPart === 'left') subKey = 'leftSub';
-        else if (selectedPart === 's') subKey = 'sRightSub';
+        else if (selectedPart === 's' || selectedPart === 'sRight') subKey = 'sRightSub';
         else if (selectedPart === 'sLeft') subKey = 'sLeftSub';
 
         if (!node.params[subKey]) node.params[subKey] = { height: 100 };
@@ -1606,7 +1598,9 @@ function renderProperties(id) {
 // ============================================================
 function init() {
     new UIManager();
-    buildSingleInitialSfiral();
+    // Сцена теперь запускается абсолютно пустой без автосоздания первой сфирали
+    updateEdges();
+    updateStats();
     resizeRenderer();
     saveState();
     animate();

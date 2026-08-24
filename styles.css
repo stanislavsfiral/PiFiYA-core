@@ -20,10 +20,10 @@ body {
     overflow: hidden;
     height: 100vh;
     width: 100vw;
-    touch-action: none; /* Отключает дефолтный скролл страницы на телефоне для работы в 3D */
+    touch-action: none; /* Отключает дефолтный скролл страницы на телефоне для работы в 3D[cite: 10] */
 }
 
-#app { display: flex; width: 100vw; height: 100vh; overflow: hidden; }
+#app { display: flex; width: 100vw; height: 100vh; overflow: hidden;[cite: 10] }
 
 #canvasContainer {
     flex: 1;
@@ -136,7 +136,7 @@ body {
 .bottom-bar .coord-input { display: flex; align-items: center; gap: 2px; }
 .bottom-bar .coord-input input {
     background: var(--bg-secondary); border: 1px solid var(--border-color); color: var(--text-light);
-    width: 32px; height: 18px; padding: 0 2px; border-radius: 3px; text-align: center; font-size: 0.55srem;
+    width: 32px; height: 18px; padding: 0 2px; border-radius: 3px; text-align: center; font-size: 0.55rem;
 }
 .bottom-bar .divider { width: 1px; height: 14px; background: var(--border-color); }
 .bottom-bar .label { color: var(--accent-cyan); font-weight: bold; font-size: 0.55rem; }
@@ -194,6 +194,17 @@ body {
 .help-section { margin-bottom: 12px; }
 .help-section h3 { color: var(--accent-green); font-size: 0.9rem; margin-bottom: 4px; }
 .help-trigger-btn { background: rgba(16,23,38,0.9); color: var(--accent-cyan); border: 1px solid var(--accent-cyan); border-radius: 50%; width: 36px; height: 36px; font-size: 1rem; cursor: pointer; z-index: 20; }
+
+/* Стили для туториала (обучения) */
+.tutorial-overlay {
+    position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+    background: rgba(7, 10, 17, 0.85); backdrop-filter: blur(6px);
+    z-index: 10000; display: flex; justify-content: center; align-items: center; padding: 20px;
+}
+.tutorial-card {
+    background: #131b2e; border: 1px solid #00e5ff; border-radius: 12px;
+    padding: 20px; width: 100%; max-width: 340px; box-shadow: 0 10px 30px rgba(0, 229, 255, 0.2);
+}
 
 @media (max-width: 640px) {
     #toolbar { top: 4px; left: 4px; right: 4px; padding: 4px 6px; gap: 3px; border-radius: 6px; }
