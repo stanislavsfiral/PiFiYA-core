@@ -142,6 +142,8 @@
             <button id="deleteBtn" title="Удалить">🗑️</button>
             
             <button id="toolCenterBtn" title="Перенести в центр (0,0,0)" style="font-size:0.8rem;">🎯</button>
+            <!-- Кнопка автоматического выравнивания (снаппинга) с допуском -->
+            <button id="snapObjectsBtn" title="Выровнять выделенные объекты по сетке и углам" style="font-size:0.8rem; background:#10b981; color:#fff;">🧲</button>
             
             <div class="dropdown" style="display:inline-block; position:relative;">
                 <button id="moreBtn" style="background:#2d1f4a; color:#ff00ff; border:1px solid #ff00ff;">⚡</button>
@@ -251,9 +253,10 @@
                     <div class="help-section">
                         <h3>🛠️ Управление и навигация</h3>
                         <p>
-                            • <b>Вращение камеры:</b> ПКМ или одним пальцем по пустому месту[cite: 6].<br>
-                            • <b>Режим выделения:</b> Кнопка «🔲 Рамка: ВЫКЛ/ВКЛ» переключает рамку выделения[cite: 6].<br>
-                            • <b>Магнитная доводка:</b> В обучении стрелки и дуги автоматически фиксируются на нужных значениях (180)[cite: 6].
+                            • <b>Вращение камеры:</b> ПКМ или одним пальцем по пустому месту.<br>
+                            • <b>Режим выделения:</b> Кнопка «🔲 Рамка: ВЫКЛ/ВКЛ» переключает рамку выделения.<br>
+                            • <b>Магнитная доводка:</b> В обучении стрелки и дуги автоматически фиксируются на нужных значениях (180).<br>
+                            • <b>Автовыравнивание (🧲):</b> Убирает микро-дрейф углов и координат с допуском 0.3.
                         </p>
                     </div>
                 </div>
@@ -264,7 +267,7 @@
         <div id="tutorialModal" class="mode-center">
             <h3 id="tutTitle">👋 Шаг 1</h3>
             <p id="tutText">
-                <span class="tutorial-arrow">⬇</span> Нажмите кнопку «➕», чтобы добавить первую сфираль[cite: 6].
+                <span class="tutorial-arrow">⬇</span> Нажмите кнопку «➕», чтобы добавить первую сфираль.
             </p>
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <span id="tutStep" style="font-size: 0.75rem; color: #ffaa00; font-weight: bold;">Ждем действия...</span>
@@ -311,56 +314,110 @@
     });
 
     // ==========================================
+    // ФУНКЦИЯ АВТОВОТВРАВНИВАНИЯ (СНАППИНГА)
+    // ==========================================
+    window.snapSelectedObjects = function(tolerance = 0.3) {
+        // Поддерживаем разные варианты хранения выделения в редакторе
+        const selection = window.selectedObjects || window.selectedNodes || (window.selectedObject ? [window.selectedObject] : []);
+        
+        if (!selection || selection.length === 0) {
+            console.log("Нет выделенных объектов для выравнивания.");
+            if (typeof showConsoleMessage === 'function') {
+                showConsoleMessage("⚠️ Нет выделенных объектов");
+            }
+            return;
+        }
+
+        let count = 0;
+        selection.forEach(obj => {
+            if (!obj) return;
+
+            // 1. Выравнивание вращения (в радианах по Three.js)
+            ['x', 'y', 'z'].forEach(axis => {
+                let currentDeg = obj.rotation[axis] * (180 / Math.PI);
+                let targetDeg = Math.round(currentDeg / 90) * 90; // Ближайший угол кратный 90°
+                
+                if (Math.abs(currentDeg - targetDeg) <= tolerance) {
+                    obj.rotation[axis] = targetDeg * (Math.PI / 180);
+                    count++;
+                }
+            });
+
+            // 2. Выравнивание координат позиции (шаг сетки)
+            ['x', 'y', 'z'].forEach(axis => {
+                let currentPos = obj.position[axis];
+                let targetPos = Math.round(currentPos);
+                
+                if (Math.abs(currentPos - targetPos) <= tolerance) {
+                    obj.position[axis] = targetPos;
+                    count++;
+                }
+            });
+        });
+
+        // Обновляем сцену / рендер, если есть глобальные функции
+        if (typeof updateScene === 'function') updateScene();
+        if (typeof render === 'function') render();
+        
+        console.log(`🧲 Автовыравнивание применено с допуском ${tolerance}. Скорректировано параметров: ${count}`);
+    };
+
+    // Привязываем клик к кнопке выравнивания
+    document.getElementById('snapObjectsBtn').addEventListener('click', () => {
+        window.snapSelectedObjects(0.3); // Порог по умолчанию 0.3 (внутри диапазона 0.1-0.5)
+    });
+
+    // ==========================================
     // ПАЙПЛАЙН ОБУЧЕНИЯ С МАГНИТНОЙ ФИКСАЦИЕЙ (SNAP)
     // ==========================================
     const tutorialMissions = [
         {
             title: "➕ Шаг 1: Первая сфираль",
-            text: '<span class="tutorial-arrow">⬆</span> Нажмите подсвеченную кнопку «➕», чтобы создать элемент[cite: 6].',
+            text: '<span class="tutorial-arrow">⬆</span> Нажмите подсвеченную кнопку «➕», чтобы создать элемент.',
             check: () => window.tutorialTriggerAdd === true,
             allowedId: 'addNodeBtn'
         },
         {
             title: "🔲 Шаг 2: Режим рамки",
-            text: '<span class="tutorial-arrow">↖</span> Кликните по подсвеченной кнопке <b>«🔲 Рамка: ВЫКЛ»</b> для включения режима выделения[cite: 6].',
+            text: '<span class="tutorial-arrow">↖</span> Кликните по подсвеченной кнопке <b>«🔲 Рамка: ВЫКЛ»</b> для включения режима выделения.',
             check: () => window.tutorialTriggerBox === true,
             allowedId: 'boxSelectToggleBtn'
         },
         {
             title: "📋 Шаг 3: Копирование",
-            text: '<span class="tutorial-arrow">⬆</span> Нажмите подсвеченную кнопку копирования <b>📋</b>[cite: 6].',
+            text: '<span class="tutorial-arrow">⬆</span> Нажмите подсвеченную кнопку копирования <b>📋</b>.',
             check: () => window.tutorialTriggerCopy === true,
             allowedId: 'copyGroupBtn'
         },
         {
             title: "↕ Шаг 4: Сдвиг по синей оси (Z)",
-            text: '<span class="tutorial-arrow">⬆</span> Потяните за <b>синюю стрелку (Z)</b> манипулятора. При приближении к <b>180</b> сработает магнитная фиксация, и значение установится автоматически![cite: 6]',
+            text: '<span class="tutorial-arrow">⬆</span> Потяните за <b>синюю стрелку (Z)</b> манипулятора. При приближении к <b>180</b> сработает магнитная фиксация, и значение установится автоматически!',
             check: () => window.tutorialTriggerTranslateZ === true,
             allowedId: 'toolTranslateBtn',
             isSnapZ: true 
         },
         {
             title: "🔄 Шаг 5: Поворот по оси X на 180°",
-            text: '<span class="tutorial-arrow">↗</span> Потяните за <b>красную дугу (X)</b> на объекте. При повороте на угол около <b>180°</b> сработает автофиксация![cite: 6]',
+            text: '<span class="tutorial-arrow">↗</span> Потяните за <b>красную дугу (X)</b> на объекте. При повороте на угол около <b>180°</b> сработает автофиксация!',
             check: () => window.tutorialTriggerRotateX === true,
             allowedId: 'toolRotateBtn',
             isSnapRotX: true 
         },
         {
             title: "🔗 Шаг 6: Соединение в цепь",
-            text: '<span class="tutorial-arrow">⬆</span> Выделите объекты рамкой и нажмите кнопку соединения <b>🔗</b>[cite: 6].',
+            text: '<span class="tutorial-arrow">⬆</span> Выделите объекты рамкой и нажмите кнопку соединения <b>🔗</b>.',
             check: () => window.tutorialTriggerConnect === true,
             allowedId: 'connectBtn'
         },
         {
             title: "🎯 Шаг 7: Центрирование цепочки",
-            text: '<span class="tutorial-arrow">⬆</span> Нажмите подсвеченную кнопку <b>🎯</b>, чтобы перенести собранную цепочку в центр сцены (0,0,0)[cite: 6].',
+            text: '<span class="tutorial-arrow">⬆</span> Нажмите подсвеченную кнопку <b>🎯</b>, чтобы перенести собранную цепочку в центр сцены (0,0,0).',
             check: () => window.tutorialTriggerCenter === true,
             allowedId: 'toolCenterBtn'
         },
         {
             title: "🚀 Обучение пройдено!",
-            text: "Великолепно! Цепочка собрана и отцентрирована. Нажмите здесь, чтобы завершить обучение[cite: 6].",
+            text: "Великолепно! Цепочка собрана и отцентрирована. Нажмите здесь, чтобы завершить обучение.",
             isFinal: true
         }
     ];
@@ -518,7 +575,7 @@
     });
 
     document.getElementById('modalRotX').addEventListener('input', () => {
-        const val = parseFloat(document.getElementById('modalRotX').value);
+        const val = parseFloat(document.getElementById('modalRotX5') || document.getElementById('modalRotX').value); // fallback safe
         if (!isNaN(val) && Math.abs(val - 180) < 30) {
             document.getElementById('modalRotX').value = 180;
             window.tutorialTriggerRotateX = true;
@@ -555,7 +612,7 @@
                         tutModal.classList.remove('mode-center');
                         tutModal.classList.add('mode-corner');
                     }
-                    alert("⚠️ Инструмент заблокирован на время обучения. Следуйте подсказке![cite: 6]");
+                    alert("⚠️ Инструмент заблокирован на время обучения. Следуйте подсказке!");
                 }
             }, true);
         }

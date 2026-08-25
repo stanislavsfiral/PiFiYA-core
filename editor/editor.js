@@ -685,8 +685,72 @@ function updateStats() {
 }
 
 // ============================================================
-// 6. ВЫДЕЛЕНИЕ И ТРАНСФОРМАЦИЯ
+// 6. ВЫДЕЛЕНИЕ И ТРАНСФОРМАЦИЯ И АВТОВЫРАВНИВАНИЕ (СНАППИНГ)
 // ============================================================
+function snapSelectedObjects(tolerance = 3.0) {
+    // Если ничего не выделено, автоматически берем ВСЕ узлы на сцене
+    const targetIds = (selectedNodes && selectedNodes.length > 0) 
+        ? selectedNodes 
+        : graph.nodes.map(n => n.id);
+
+    if (targetIds.length === 0) {
+        console.warn("⚠️ На сцене нет сфиралей для выравнивания.");
+        if (typeof showConsoleMessage === 'function') {
+            showConsoleMessage("⚠️ Сцена пуста!");
+        }
+        return;
+    }
+
+    saveState();
+    let count = 0;
+
+    targetIds.forEach(id => {
+        const node = getNode(id);
+        const group = meshMap.get(id);
+        if (!node || !group) return;
+
+        // 1. Выравнивание вращения по осям X, Y, Z (кратные 90°)
+        if (node.params.angles) {
+            node.params.angles = node.params.angles.map(currentDeg => {
+                let targetDeg = Math.round(currentDeg / 90) * 90;
+                if (Math.abs(currentDeg - targetDeg) <= tolerance) {
+                    count++;
+                    return targetDeg;
+                }
+                return currentDeg;
+            });
+
+            group.rotation.set(
+                THREE.MathUtils.degToRad(node.params.angles[0]),
+                THREE.MathUtils.degToRad(node.params.angles[1]),
+                THREE.MathUtils.degToRad(node.params.angles[2])
+            );
+        }
+
+        // 2. Выравнивание координат позиции по всем трем осям (X, Y, Z)
+        ['x', 'y', 'z'].forEach(axis => {
+            let currentPos = node[axis];
+            let targetPos = Math.round(currentPos);
+            
+            if (Math.abs(currentPos - targetPos) <= tolerance) {
+                node[axis] = targetPos;
+                count++;
+            }
+        });
+
+        updateNodeVisual(node);
+    });
+
+    updateEdges();
+    updateStats();
+    logAction('SNAP_ALL_OR_SELECTED', { targets: targetIds, tolerance, adjustedCount: count });
+    sendDataToPythonCore(true);
+    
+    console.log(`🧲 Выравнивание применено (${selectedNodes.length > 0 ? 'к выделению' : 'ко ВСЕЙ СЦЕНЕ'}) с допуском ±${tolerance}. Скорректировано параметров: ${count}`);
+}
+
+window.snapSelectedObjects = snapSelectedObjects;
+
 function updateSelectionHighlights() {
     meshMap.forEach((group, id) => {
         const isSelectedNode = selectedNodes.includes(id);
@@ -949,6 +1013,7 @@ class UIManager {
         const transBtn = document.getElementById('toolTranslateBtn');
         const rotBtn = document.getElementById('toolRotateBtn');
         const centerBtn = document.getElementById('toolCenterBtn');
+        const snapBtn = document.getElementById('snapObjectsBtn');
 
         if (transBtn) {
             transBtn.classList.add('active');
@@ -977,6 +1042,10 @@ class UIManager {
 
         if (centerBtn) {
             centerBtn.addEventListener('click', () => { centerSelectedToOrigin(); });
+        }
+
+        if (snapBtn) {
+            snapBtn.addEventListener('click', () => { snapSelectedObjects(3.0); });
         }
     }
 
