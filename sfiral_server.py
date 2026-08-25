@@ -3,8 +3,15 @@ import json
 import os
 import numpy as np
 import time
+from datetime import datetime
 
 PORT = 8000
+
+# Выделяем отдельную папку «ai_memory» для накопления опыта ИИ
+AI_MEMORY_DIR = "ai_memory"
+os.makedirs(AI_MEMORY_DIR, exist_ok=True)
+
+TIMELINE_LOG_FILE = os.path.join(AI_MEMORY_DIR, "ai_timeline_log.jsonl")
 
 class SfiralComputeHandler(http.server.SimpleHTTPRequestHandler):
     def _set_headers(self, status=200):
@@ -31,7 +38,31 @@ class SfiralComputeHandler(http.server.SimpleHTTPRequestHandler):
         try:
             model_data = json.loads(post_data.decode('utf-8'))
             nodes = model_data.get('nodes', [])
+            design_timeline = model_data.get('design_timeline', [])
             
+            # --- ЖЕСТКОЕ АВТОСОХРАНЕНИЕ КАЖДОГО ЗАПРОСА В AI_MEMORY ---
+            time_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S-%f")[:-3] # с миллисекундами
+            session_filename = os.path.join(AI_MEMORY_DIR, f"session_{time_str}.json")
+            
+            session_record = {
+                "timestamp": time.time(),
+                "model_name": model_data.get("model_name", "GIDEON-Session"),
+                "total_nodes": len(nodes),
+                "nodes": nodes,
+                "edges": model_data.get("edges", []),
+                "total_steps": len(design_timeline),
+                "timeline": design_timeline
+            }
+            
+            with open(TIMELINE_LOG_FILE, "a", encoding="utf-8") as log_f:
+                log_f.write(json.dumps(session_record, ensure_ascii=False) + "\n")
+            
+            with open(session_filename, "w", encoding="utf-8") as sess_f:
+                json.dump(session_record, sess_f, ensure_ascii=False, indent=4)
+                
+            print(f"🧠 [AI Memory СОХРАНЕНО]: -> {session_filename}")
+            # ---------------------------------------------------------
+
             total_nodes = len(nodes)
             pos_count, neg_count, zero_count = 0, 0, 0
             node_signals = []
@@ -48,8 +79,7 @@ class SfiralComputeHandler(http.server.SimpleHTTPRequestHandler):
                 angles = params.get('angles', [0, 0, 0])
                 x, y, z = node.get('x', 0), node.get('y', 0), node.get('z', 0)
                 
-                # Поддержка кастомных квантовых вентилей и троичных состояний
-                gate_type = params.get('activeGate', 'H')
+                gate_type = params.get('activeGate', 'ROUTER_SWAP')
                 
                 if show_right and not show_left:
                     pos_count += 1
@@ -61,22 +91,28 @@ class SfiralComputeHandler(http.server.SimpleHTTPRequestHandler):
                     zero_count += 1
                     node_signals.append(0.0)
 
-                # Пространственный фазовый набег с учетом типа вентиля
                 phi_spatial = np.radians(angles[1] + angles[2]) + (np.sqrt(x**2 + y**2 + z**2) / 1000.0)
                 
-                if gate_type == 'S_TRANSITION':
-                    # Топологический S-переход: плавная инверсия фазы без разрыва потока
+                # Обработка новых управляющих вентилей в расчете фазового тензора
+                if gate_type == 'READOUT':
+                    phase_tensor = np.exp(1j * (phi_spatial + np.pi / 2))
+                elif gate_type == 'SCALE_CORRECTOR':
+                    phase_tensor = np.exp(1j * (phi_spatial * params.get('scale', 1.0)))
+                elif gate_type == 'RESET':
+                    phase_tensor = np.exp(1j * 0.0)
+                else: # ROUTER_SWAP (инверсия витков / S-переход)
                     phase_tensor = np.exp(1j * (phi_spatial + np.pi / 3))
-                else:
-                    phase_tensor = np.exp(1j * phi_spatial)
                 
-                # Применение матричного преобразования в 3D пространстве
                 state_vector = np.array([1.0, 0.0], dtype=complex)
                 transformed_state = np.dot(H_matrix, state_vector) * phase_tensor
                 
                 psi_real = float(np.real(transformed_state[0]))
                 psi_imag = float(np.imag(transformed_state[1]))
                 intensity = float(np.abs(transformed_state[0])**2 + np.abs(transformed_state[1])**2)
+                
+                if gate_type == 'READOUT':
+                    intensity = 1.0  # Фиксация максимума сигнала при считывании
+                
                 total_intensity += intensity
 
                 quantum_results.append({
@@ -129,7 +165,7 @@ class SfiralComputeHandler(http.server.SimpleHTTPRequestHandler):
 
             self._set_headers(200)
             self.wfile.write(json.dumps(response_data).encode('utf-8'))
-            print(f"⚡ [3D Квантовое ядро] Узлов: {total_nodes} | Время: {elapsed_ms:.2f}мс | Интенсивность: {total_intensity:.2f} | Хиральность: {response_data['metrics']['integral_chirality']}")
+            print(f"⚡ [3D Квантовое ядро] Узлов: {total_nodes} | Время: {elapsed_ms:.2f}мс | Интенсивность: {total_intensity:.2f}")
 
         except Exception as e:
             error_response = {"status": "error", "message": str(e)}
@@ -140,6 +176,7 @@ class SfiralComputeHandler(http.server.SimpleHTTPRequestHandler):
 if __name__ == "__main__":
     server = http.server.HTTPServer(('localhost', PORT), SfiralComputeHandler)
     print(f"🚀 Вычислительное ядро Сфирали запущено: http://localhost:{PORT}/index.html")
+    print(f"🧠 Папка ai_memory активна: ./{AI_MEMORY_DIR}/")
     print("⏳ Ожидание запросов от сайта...")
     try:
         server.serve_forever()

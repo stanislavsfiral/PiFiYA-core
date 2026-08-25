@@ -4,7 +4,7 @@ import { TransformControls } from 'https://cdn.jsdelivr.net/npm/three@0.128.0/ex
 import { generateRightBranch, TernarySpatialWalshEngine } from './FractalBuilder.js';
 
 // ============================================================
-// 1. СОСТОЯНИЕ ПРИЛОЖЕНИЯ
+// 1. СОСТОЯНИЕ ПРИЛОЖЕНИЯ И ЛОГИРОВАНИЕ ИСТОРИИ ДЕЙСТВИЙ (AI TRAINING)
 // ============================================================
 let graph = { nodes: [], edges: [] };
 let nextId = 1;
@@ -14,6 +14,20 @@ let undoStack = [], redoStack = [];
 const MAX_UNDO = 30;
 let clipboard = null;
 let pythonTimeout = null;
+
+// Хронологическая цепочка действий для обучения ИИ
+let designTimeline = [];
+
+function logAction(actionType, payload) {
+    const stepRecord = {
+        step: designTimeline.length + 1,
+        timestamp: Date.now(),
+        action: actionType,
+        data: payload
+    };
+    designTimeline.push(stepRecord);
+    console.log(`🧠 [AI Timeline Log]: ${actionType}`, payload);
+}
 
 // Виртуальный контейнер для управления группой выделенных объектов
 const groupTransformProxy = new THREE.Group();
@@ -50,7 +64,7 @@ function getCachedSfiralGeometries(N, scale, stretch, subParams, showRight, show
 }
 
 // ============================================================
-// 2. ЯДРО – РАБОТА С ГРАФОМ И СЕТЬ
+// 2. ЯДРО – РАБОТА С ГРАФОМ И СЕТЬЮ
 // ============================================================
 const walshEngine = new TernarySpatialWalshEngine();
 
@@ -68,7 +82,7 @@ function addNode(mode, x, y, z, params) {
             scale: params?.scale !== undefined ? params.scale : 1.0,
             stretch: params?.stretch !== undefined ? params.stretch : 1.0,
             angles: params?.angles ? [...params.angles] : [0, 0, 0],
-            activeGate: params?.activeGate || 'H',
+            activeGate: params?.activeGate || 'ROUTER_SWAP',
             showRight: params?.showRight !== undefined ? params.showRight : true,
             showS: params?.showS !== undefined ? params.showS : true,
             showLeft: params?.showLeft !== undefined ? params.showLeft : true,
@@ -83,6 +97,7 @@ function addNode(mode, x, y, z, params) {
         quantumState: { intensity: 0, psi_real: 0, psi_imag: 0 }
     };
     graph.nodes.push(node);
+    logAction('ADD_NODE', { id: node.id, x: node.x, y: node.y, z: node.z, params: node.params });
     return node;
 }
 
@@ -96,12 +111,14 @@ function addEdge(fromId, toId, weight, type = 'right_polarization') {
         type: type 
     };
     graph.edges.push(edge);
+    logAction('CONNECT_NODES', { from: fromId, to: toId, type });
     return edge;
 }
 
 function removeNode(id) {
     graph.nodes = graph.nodes.filter(n => n.id !== id);
     graph.edges = graph.edges.filter(e => e.from !== id && e.to !== id);
+    logAction('REMOVE_NODE', { id });
 }
 
 function getNode(id) { return graph.nodes.find(n => n.id === id); }
@@ -113,31 +130,34 @@ function autoConnectStuckNodes() {
 function compileTopologyToQuantumCircuit() {
     let circuitGates = [];
     graph.nodes.forEach(node => {
-        const gate = node.params.activeGate || 'H';
+        const gate = node.params.activeGate || 'ROUTER_SWAP';
         circuitGates.push(`${gate}(q${node.id})`);
     });
     graph.edges.forEach(edge => {
-        circuitGates.push(`CNOT(q${edge.from}, q${edge.to})`);
+        circuitGates.push(`LINK(q${edge.from}, q${edge.to})`);
     });
 
     const consoleEl = document.getElementById('console');
     if (consoleEl && graph.nodes.length > 0) {
         consoleEl.style.display = 'block';
         consoleEl.innerHTML += `
-            <div class="line success">🧬 [Авто-Компилятор схемы]: Сгенерирован квантовый пайплайн[cite: 13]</div>
-            <div class="line">🛠️ [Цепочка вентилей]: ${circuitGates.join(' — ')}[cite: 13]</div>
+            <div class="line success">🧬 [Авто-Компилятор схемы]: Сгенерирован топологический пайплайн</div>
+            <div class="line">🛠️ [Активные вентили]: ${circuitGates.join(' — ')}</div>
         `;
     }
 }
 
 // ============================================================
-// 3. ОНЛАЙН-МОСТ С PYTHON-ЯДРОМ
+// 3. ОНЛАЙН-МОСТ С PYTHON-ЯДРОМ И АВТОСОХРАНЕНИЕМ В AI_MEMORY
 // ============================================================
-async function sendDataToPythonCore() {
+async function sendDataToPythonCore(isSaving = true) {
     const payload = {
         model_name: "GIDEON-Realtime-Session",
         total_nodes: graph.nodes.length,
-        nodes: graph.nodes.map(n => ({ id: n.id, x: n.x, y: n.y, z: n.z, params: n.params }))
+        nodes: graph.nodes.map(n => ({ id: n.id, x: n.x, y: n.y, z: n.z, params: n.params })),
+        edges: graph.edges,
+        design_timeline: designTimeline,
+        save_to_disk: isSaving
     };
 
     try {
@@ -151,18 +171,18 @@ async function sendDataToPythonCore() {
             const consoleEl = document.getElementById('console');
             if (consoleEl) {
                 consoleEl.style.display = 'block';
-                consoleEl.innerHTML += `<div class="line success">⚡ [Ядро онлайн]: Сфиралей обработано: ${result.computed_nodes}[cite: 13]</div>`;
+                consoleEl.innerHTML += `<div class="line success">⚡ [AI Memory авто-сейв]: Узлов: ${result.computed_nodes}</div>`;
             }
             compileTopologyToQuantumCircuit();
         }
     } catch (err) {
-        console.warn("⚠️ Локальное ядро не отвечает[cite: 13].");
+        console.warn("⚠️ Локальное ядро не отвечает.");
     }
 }
 
 const sendDataPythonCoreThrottled = () => {
     if (pythonTimeout) clearTimeout(pythonTimeout);
-    pythonTimeout = setTimeout(() => sendDataToPythonCore(), 300);
+    pythonTimeout = setTimeout(() => sendDataToPythonCore(true), 400);
 };
 
 // ============================================================
@@ -319,7 +339,15 @@ transformControls.addEventListener('mouseUp', () => {
     autoConnectStuckNodes();
     saveState();
     updateStats();
-    sendDataToPythonCore();
+    if (selectedNodes.length === 1) {
+        const node = getNode(selectedNodes[0]);
+        if (node) {
+            logAction('TRANSFORM_NODE', { id: node.id, x: node.x, y: node.y, z: node.z, angles: node.params.angles });
+        }
+    } else if (selectedNodes.length > 1) {
+        logAction('TRANSFORM_GROUP', { nodes: selectedNodes });
+    }
+    sendDataToPythonCore(true);
     if (selectedNodes.length > 1) {
         updateSelectionHighlights();
     }
@@ -730,7 +758,8 @@ function centerSelectedToOrigin() {
 
     updateEdges();
     updateSelectionHighlights();
-    sendDataToPythonCore();
+    logAction('CENTER_SELECTED', { nodes: selectedNodes });
+    sendDataToPythonCore(true);
 }
 
 function getObjectUnderMouse(clientX, clientY) {
@@ -864,7 +893,8 @@ function pasteClipboard() {
     selectedPart = null;
     updateSelectionHighlights();
     renderProperties(selectedNodes.length === 1 ? selectedNodes[0] : null);
-    sendDataToPythonCore();
+    logAction('PASTE_CLIPBOARD', { newIds });
+    sendDataToPythonCore(true);
 }
 
 function applyScaleAndStretchToNodes(nodeIds, newScale, newStretch) {
@@ -900,11 +930,12 @@ function applyScaleAndStretchToNodes(nodeIds, newScale, newStretch) {
     });
 
     updateEdges();
+    logAction('SCALE_STRETCH', { nodeIds, newScale, newStretch });
     sendDataPythonCoreThrottled();
 }
 
 // ============================================================
-// 9. UI-МЕНЕДЖЕР И КВАНТОВЫЕ ВЕНТИЛИ (С ПОДДЕРЖКОЙ TOUCH)
+// 9. UI-МЕНЕДЖЕР И КОРРЕКТНЫЕ УПРАВЛЯЮЩИЕ ВЕНТИЛИ
 // ============================================================
 class UIManager {
     constructor() {
@@ -950,58 +981,74 @@ class UIManager {
     }
 
     setupQuantumGates() {
-        document.getElementById('gateHadamard')?.addEventListener('click', () => {
+        // 1. Маршрутизатор (SWAP / Коммутация потоков)
+        document.getElementById('gateRouter')?.addEventListener('click', () => {
             if (selectedNodes.length === 0) { alert('Выберите сфираль'); return; }
             saveState();
             selectedNodes.forEach(id => {
                 const node = getNode(id);
                 if (node) {
-                    node.params.activeGate = 'H';
-                    node.quantumState.intensity = 0.8;
-                    updateNodeVisual(node);
-                }
-            });
-            updateEdges(); updateStats(); sendDataToPythonCore();
-        });
-
-        document.getElementById('gateSTransition')?.addEventListener('click', () => {
-            if (selectedNodes.length === 0) { alert('Выберите сфираль'); return; }
-            saveState();
-            selectedNodes.forEach(id => {
-                const node = getNode(id);
-                if (node) {
-                    node.params.activeGate = 'S_TRANSITION';
-                    const tempShow = node.params.showRight;
-                    node.params.showRight = node.params.showLeft;
-                    node.params.showLeft = tempShow;
-                    node.params.angles[2] = (node.params.angles[2] + 180) % 360;
-                    updateNodeVisual(node);
-                }
-            });
-            updateEdges(); updateStats(); sendDataToPythonCore();
-        });
-
-        document.getElementById('gateX')?.addEventListener('click', () => {
-            if (selectedNodes.length === 0) { alert('Выберите сфираль'); return; }
-            saveState();
-            selectedNodes.forEach(id => {
-                const node = getNode(id);
-                if (node) {
-                    node.params.activeGate = 'X';
+                    node.params.activeGate = 'ROUTER_SWAP';
                     const temp = node.params.showRight;
                     node.params.showRight = node.params.showLeft;
                     node.params.showLeft = temp;
                     updateNodeVisual(node);
+                    logAction('APPLY_GATE', { id: node.id, gate: 'ROUTER_SWAP' });
                 }
             });
-            updateEdges(); updateStats(); sendDataToPythonCore();
+            updateEdges(); updateStats(); sendDataToPythonCore(true);
         });
 
-        document.getElementById('gateCNOT')?.addEventListener('click', () => {
-            if (selectedNodes.length !== 2) { alert('Выберите ровно две сфирали'); return; }
+        // 2. Датчик считывания данных (Readout)
+        document.getElementById('gateReadout')?.addEventListener('click', () => {
+            if (selectedNodes.length === 0) { alert('Выберите сфираль'); return; }
             saveState();
-            const edge = addEdge(selectedNodes[0], selectedNodes[1], 1.0, 'right_polarization');
-            if (edge) { updateEdges(); updateStats(); sendDataToPythonCore(); }
+            selectedNodes.forEach(id => {
+                const node = getNode(id);
+                if (node) {
+                    node.params.activeGate = 'READOUT';
+                    node.quantumState.intensity = 1.0;
+                    updateNodeVisual(node);
+                    logAction('APPLY_GATE', { id: node.id, gate: 'READOUT' });
+                }
+            });
+            updateEdges(); updateStats(); sendDataToPythonCore(true);
+        });
+
+        // 3. Корректор масштаба (Scale & Stretch Control -> переключен на пружину по оси Z)
+        document.getElementById('gateScaleControl')?.addEventListener('click', () => {
+            if (selectedNodes.length === 0) { alert('Выберите сфираль'); return; }
+            saveState();
+            selectedNodes.forEach(id => {
+                const node = getNode(id);
+                if (node) {
+                    node.params.activeGate = 'SCALE_CORRECTOR';
+                    const currentStretch = node.params.stretch !== undefined ? node.params.stretch : 1.0;
+                    node.params.stretch = Math.min(5.0, Number((currentStretch + 0.2).toFixed(1)));
+                    updateNodeVisual(node);
+                    logAction('APPLY_GATE', { id: node.id, gate: 'SCALE_CORRECTOR', stretch: node.params.stretch });
+                }
+            });
+            updateEdges(); updateStats(); sendDataToPythonCore(true);
+        });
+
+        // 4. Инициализатор (Reset / Старт)
+        document.getElementById('gateReset')?.addEventListener('click', () => {
+            if (selectedNodes.length === 0) { alert('Выберите сфираль'); return; }
+            saveState();
+            selectedNodes.forEach(id => {
+                const node = getNode(id);
+                if (node) {
+                    node.params.activeGate = 'RESET';
+                    node.params.showRight = true;
+                    node.params.showLeft = true;
+                    node.params.stretch = 1.0;
+                    node.quantumState.intensity = 0;
+                    updateNodeVisual(node);
+                    logAction('APPLY_GATE', { id: node.id, gate: 'RESET' });
+                }
+            });
+            updateEdges(); updateStats(); sendDataToPythonCore(true);
         });
     }
 
@@ -1026,7 +1073,7 @@ class UIManager {
             const el = document.getElementById(id);
             if (el) {
                 el.addEventListener('input', () => { applyModalPositionLive(); autoConnectStuckNodes(); });
-                el.addEventListener('change', () => { saveState(); sendDataToPythonCore(); });
+                el.addEventListener('change', () => { saveState(); sendDataToPythonCore(true); });
             }
         });
 
@@ -1034,7 +1081,7 @@ class UIManager {
             const el = document.getElementById(id);
             if (el) {
                 el.addEventListener('input', () => { applyModalRotationLive(); autoConnectStuckNodes(); });
-                el.addEventListener('change', () => { saveState(); sendDataToPythonCore(); });
+                el.addEventListener('change', () => { saveState(); sendDataToPythonCore(true); });
             }
         });
 
@@ -1409,10 +1456,10 @@ function addNodeHandler() {
         const lastNode = graph.nodes[graph.nodes.length - 1];
         nextX = lastNode.x - 140; nextZ = lastNode.z - 180;
     }
-    const node = addNode('Single', nextX, 0, nextZ, { N: 5, target_len: 1000, scale: 1.0, stretch: 1.0, angles: [0, 0, 0], activeGate: 'H' });
+    const node = addNode('Single', nextX, 0, nextZ, { N: 5, target_len: 1000, scale: 1.0, stretch: 1.0, angles: [0, 0, 0], activeGate: 'ROUTER_SWAP' });
     updateNodeVisual(node); updateEdges(); updateStats();
     selectedNodes = [node.id]; selectedPart = null;
-    updateSelectionHighlights(); renderProperties(node.id); sendDataToPythonCore();
+    updateSelectionHighlights(); renderProperties(node.id); sendDataToPythonCore(true);
 }
 
 function deleteSelected() {
@@ -1428,7 +1475,9 @@ function deleteSelected() {
             else if (selectedPart === 'sLeft') node.params.showSLeft = false;
 
             updateNodeVisual(node); selectedPart = null;
-            updateSelectionHighlights(); renderProperties(node.id); sendDataToPythonCore();
+            updateSelectionHighlights(); renderProperties(node.id); 
+            logAction('HIDE_PART', { id: node.id, part: selectedPart });
+            sendDataToPythonCore(true);
             return;
         }
     }
@@ -1439,14 +1488,14 @@ function deleteSelected() {
     });
     selectedNodes = []; selectedPart = null; transformControls.detach();
     updateEdges(); updateStats(); renderProperties(null);
-    updateSelectionHighlights(); sendDataToPythonCore();
+    updateSelectionHighlights(); sendDataToPythonCore(true);
 }
 
 function connectSelected() {
     if (selectedNodes.length === 2) {
         saveState();
         const edge = addEdge(selectedNodes[0], selectedNodes[1], 1.0, 'right_polarization');
-        if (edge) { updateEdges(); updateStats(); sendDataToPythonCore(); }
+        if (edge) { updateEdges(); updateStats(); sendDataToPythonCore(true); }
         else { alert('Связь уже существует'); }
     } else {
         alert('Выделите ровно две сфирали');
@@ -1456,21 +1505,32 @@ function connectSelected() {
 function buildFractalComposition() {
     saveState();
     graph.nodes = []; graph.edges = []; nextId = 1;
-    const n1 = addNode('Single', 0, 0, 0, { N: 5, target_len: 1000, scale: 1.0, stretch: 1.0, angles: [0, 0, 0], activeGate: 'H' });
-    const n2 = addNode('Single', -140, 0, -180, { N: 5, target_len: 1000, scale: 1.0, stretch: 1.0, angles: [0, 0, 0], activeGate: 'H' });
+    const n1 = addNode('Single', 0, 0, 0, { N: 5, target_len: 1000, scale: 1.0, stretch: 1.0, angles: [0, 0, 0], activeGate: 'ROUTER_SWAP' });
+    const n2 = addNode('Single', -140, 0, -180, { N: 5, target_len: 1000, scale: 1.0, stretch: 1.0, angles: [0, 0, 0], activeGate: 'ROUTER_SWAP' });
     addEdge(n1.id, n2.id, 1.0, 'right_polarization');
     updateAllNodes(); selectedNodes = [n1.id]; selectedPart = null;
-    updateSelectionHighlights(); renderProperties(n1.id); sendDataToPythonCore();
+    updateSelectionHighlights(); renderProperties(n1.id); 
+    logAction('BUILD_PRESET', { preset: 'fractal_composition' });
+    sendDataToPythonCore(true);
 }
 
-function saveModel() {
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(graph, null, 2));
+async function saveModel() {
+    console.log("💾 Сохранение модели и принудительный бэкап в ai_memory...");
+    await sendDataToPythonCore(true);
+
+    const exportData = {
+        graph: graph,
+        design_timeline: designTimeline
+    };
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData, null, 2));
     const downloadAnchor = document.createElement('a');
     downloadAnchor.setAttribute("href", dataStr);
-    downloadAnchor.setAttribute("download", "gideon_sfiral_model.json");
+    downloadAnchor.setAttribute("download", "gideon_sfiral_model_with_history.json");
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
+    
+    alert('🧠 Сессия зафиксирована в ai_memory и скачана на компьютер!');
 }
 
 function loadModel(e) {
@@ -1480,16 +1540,20 @@ function loadModel(e) {
     reader.onload = function(event) {
         try {
             const loadedData = JSON.parse(event.target.result);
-            if (loadedData && Array.isArray(loadedData.nodes)) {
+            if (loadedData && (Array.isArray(loadedData.nodes) || loadedData.graph)) {
                 saveState();
-                graph.nodes = loadedData.nodes;
-                graph.edges = Array.isArray(loadedData.edges) ? loadedData.edges : [];
+                const targetGraph = loadedData.graph || loadedData;
+                graph.nodes = targetGraph.nodes || [];
+                graph.edges = Array.isArray(targetGraph.edges) ? targetGraph.edges : [];
+                if (loadedData.design_timeline) {
+                    designTimeline = loadedData.design_timeline;
+                }
                 let maxId = 0;
                 graph.nodes.forEach(n => { if (n.id > maxId) maxId = n.id; });
                 nextId = maxId + 1;
                 updateAllNodes(); selectedNodes = []; selectedPart = null;
-                transformControls.detach(); renderProperties(null); sendDataToPythonCore();
-                alert('📦 Модель успешно загружена!');
+                transformControls.detach(); renderProperties(null); sendDataToPythonCore(true);
+                alert('📦 Модель и история сборки успешно загружены!');
             } else {
                 alert('⚠️ Ошибка: Неверный формат файла модели.');
             }
@@ -1541,8 +1605,8 @@ function renderProperties(id) {
     if (selectedPart) {
         let subKey = 'rightSub';
         if (selectedPart === 'left') subKey = 'leftSub';
-        else if (selectedPart === 's' || selectedPart === 'sRight') subKey = 'sRightSub';
-        else if (selectedPart === 'sLeft') subKey = 'sLeftSub';
+        else if (selectedPart === 's' || selectedPart === 'sRight') subKey = 'subRight';
+        else if (selectedPart === 'sLeft') subKey = 'subLeftSub';
 
         if (!node.params[subKey]) node.params[subKey] = { height: 100 };
         const sub = node.params[subKey];
@@ -1560,15 +1624,16 @@ function renderProperties(id) {
         return;
     }
 
-    const activeGate = p.activeGate || 'H';
+    const activeGate = p.activeGate || 'ROUTER_SWAP';
     container.innerHTML = `
         <div class="prop-group highlight">📦 Сфираль [ID: ${node.id}]</div>
         <div class="prop-group">
-            <label>Квантовый вентиль (КудИТ)</label>
+            <label>Управляющий вентиль</label>
             <select id="nodeGateSelect" style="width:100%; background:#1f2d4a; color:#fff; padding:4px; border-radius:4px; font-size:0.75rem;">
-                <option value="H" ${activeGate === 'H' ? 'selected' : ''}>H (Адамар / Супериор)</option>
-                <option value="S_TRANSITION" ${activeGate === 'S_TRANSITION' ? 'selected' : ''}>S_TRANSITION (Топологический S-переход)</option>
-                <option value="X" ${activeGate === 'X' ? 'selected' : ''}>X (Инверсия витков)</option>
+                <option value="ROUTER_SWAP" ${activeGate === 'ROUTER_SWAP' ? 'selected' : ''}>Маршрутизатор (SWAP потоков)</option>
+                <option value="READOUT" ${activeGate === 'READOUT' ? 'selected' : ''}>Датчик считывания (Readout)</option>
+                <option value="SCALE_CORRECTOR" ${activeGate === 'SCALE_CORRECTOR' ? 'selected' : ''}>Корректор масштаба</option>
+                <option value="RESET" ${activeGate === 'RESET' ? 'selected' : ''}>Инициализатор (Reset)</option>
             </select>
         </div>
         <div class="prop-group"><label>Общий масштаб (+ / -)</label><input type="number" id="propScale" value="${p.scale ?? 1.0}" min="0.1" max="10.0" step="0.1" /></div>
@@ -1579,7 +1644,8 @@ function renderProperties(id) {
         node.params.activeGate = e.target.value;
         saveState();
         updateNodeVisual(node);
-        sendDataToPythonCore();
+        logAction('CHANGE_GATE', { id: node.id, gate: node.params.activeGate });
+        sendDataToPythonCore(true);
     });
 
     document.getElementById('propScale').addEventListener('input', (e) => {
@@ -1598,7 +1664,6 @@ function renderProperties(id) {
 // ============================================================
 function init() {
     new UIManager();
-    // Сцена теперь запускается абсолютно пустой без автосоздания первой сфирали
     updateEdges();
     updateStats();
     resizeRenderer();
