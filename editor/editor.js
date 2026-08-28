@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/controls/TransformControls.js';
 import { generateRightBranch, TernarySpatialWalshEngine } from './FractalBuilder.js';
+import { computeQuantumNetwork } from '../core/GideonMath.js';
 
 // ============================================================
 // 1. СОСТОЯНИЕ ПРИЛОЖЕНИЯ И ЛОГИРОВАНИЕ ИСТОРИИ ДЕЙСТВИЙ (AI TRAINING)
@@ -193,40 +194,25 @@ function updateQuantumColors(nodesQuantum) {
 }
 
 // ============================================================
-// 3. ОНЛАЙН-МОСТ С PYTHON-ЯДРОМ И АВТОСОХРАНЕНИЕМ В AI_MEMORY
+// 3. АВТОНОМНЫЙ КВАНТОВЫЙ РАСЧЕТ (БЕЗ PYTHON-БЭКЕНДА)
 // ============================================================
 async function sendDataToPythonCore(isSaving = true) {
-    const payload = {
-        model_name: "GIDEON-Realtime-Session",
-        total_nodes: graph.nodes.length,
-        nodes: graph.nodes.map(n => ({ id: n.id, x: n.x, y: n.y, z: n.z, params: n.params })),
-        edges: graph.edges,
-        design_timeline: designTimeline,
-        save_to_disk: isSaving
-    };
-
+    const startTime = performance.now();
     try {
-        const response = await fetch('http://localhost:8000', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-        const result = await response.json();
-        if (result.status === "success") {
-            const consoleEl = document.getElementById('console');
-            if (consoleEl) {
-                consoleEl.style.display = 'block';
-                consoleEl.innerHTML += `<div class="line success">⚡ [Qutrit Core]: Узлов: ${result.computed_nodes}, Время расчета: ${result.execution_time_ms}мс</div>`;
-            }
-            
-            if (result.nodes_quantum) {
-                updateQuantumColors(result.nodes_quantum);
-            }
-
-            compileTopologyToQuantumCircuit();
+        const nodesQuantum = computeQuantumNetwork(graph.nodes, graph.edges);
+        const executionTime = (performance.now() - startTime).toFixed(2);
+        
+        const consoleEl = document.getElementById('console');
+        if (consoleEl) {
+            consoleEl.style.display = 'block';
+            consoleEl.innerHTML += `<div class="line success">⚡ [Native Q-Core]: Узлов: ${graph.nodes.length}, Время расчета: ${executionTime}мс</div>`;
+            consoleEl.scrollTop = consoleEl.scrollHeight;
         }
+        
+        updateQuantumColors(nodesQuantum);
+        compileTopologyToQuantumCircuit();
     } catch (err) {
-        console.warn("⚠️ Локальное ядро не отвечает.");
+        console.error("Ошибка автономного расчета:", err);
     }
 }
 

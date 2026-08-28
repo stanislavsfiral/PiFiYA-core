@@ -147,3 +147,98 @@ export class GideonWebCore {
         else return meanDiff * (1.0 / Math.sqrt(quenchRate));
     }
 }
+
+// ==========================================
+// АВТОНОМНОЕ КВАНТОВОЕ ЯДРО (JS)
+// ==========================================
+class Complex {
+    constructor(re = 0, im = 0) { this.re = re; this.im = im; }
+    add(c) { return new Complex(this.re + c.re, this.im + c.im); }
+    mul(c) { return new Complex(this.re * c.re - this.im * c.im, this.re * c.im + this.im * c.re); }
+    mag2() { return this.re * this.re + this.im * this.im; }
+    scale(s) { return new Complex(this.re * s, this.im * s); }
+}
+
+function dot3x3(matrix, vector) {
+    let res = [new Complex(), new Complex(), new Complex()];
+    for (let i = 0; i < 3; i++) {
+        for (let j = 0; j < 3; j++) res[i] = res[i].add(matrix[i][j].mul(vector[j]));
+    }
+    return res;
+}
+
+const S_JUNCTION = [
+    [new Complex(0), new Complex(0), new Complex(1)],
+    [new Complex(0), new Complex(1), new Complex(0)],
+    [new Complex(1), new Complex(0), new Complex(0)]
+];
+const hF = 1 / Math.sqrt(3);
+const w = new Complex(-0.5, Math.sqrt(3)/2);
+const w2 = new Complex(-0.5, -Math.sqrt(3)/2);
+const HADAMARD = [
+    [new Complex(hF), new Complex(hF), new Complex(hF)],
+    [new Complex(hF), w.scale(hF), w2.scale(hF)],
+    [new Complex(hF), w2.scale(hF), w.scale(hF)]
+];
+
+export class SfiralQutrit {
+    constructor(L = 0, S = 0, R = 1) {
+        this.state = [new Complex(L), new Complex(S), new Complex(R)];
+        this.normalize();
+    }
+    normalize() {
+        let norm = Math.sqrt(this.state[0].mag2() + this.state[1].mag2() + this.state[2].mag2());
+        if (norm > 0) this.state = this.state.map(c => c.scale(1/norm));
+    }
+    applyGate(gateName) {
+        let matrix = gateName === 'SCALE_CORRECTOR' ? S_JUNCTION : HADAMARD;
+        this.state = dot3x3(matrix, this.state);
+        this.normalize();
+    }
+    add(other) {
+        this.state = [this.state[0].add(other.state[0]), this.state[1].add(other.state[1]), this.state[2].add(other.state[2])];
+        this.normalize();
+    }
+    getProbabilities() {
+        return { L: parseFloat(this.state[0].mag2().toFixed(4)), S: parseFloat(this.state[1].mag2().toFixed(4)), R: parseFloat(this.state[2].mag2().toFixed(4)) };
+    }
+    clone() {
+        let q = new SfiralQutrit();
+        q.state = [new Complex(this.state[0].re, this.state[0].im), new Complex(this.state[1].re, this.state[1].im), new Complex(this.state[2].re, this.state[2].im)];
+        return q;
+    }
+}
+
+export function computeQuantumNetwork(nodes, edges) {
+    let quantum_results_map = {};
+    let start_nodes = nodes.filter(n => !edges.some(e => e.to === n.id)).map(n => n.id);
+    if (start_nodes.length === 0 && nodes.length > 0) start_nodes = [nodes[0].id];
+
+    let active_signals = {};
+    start_nodes.forEach(id => { active_signals[id] = new SfiralQutrit(0, 0, 1); });
+    let nodesMap = {}; nodes.forEach(n => nodesMap[n.id] = n);
+
+    for (let tick = 0; tick < nodes.length + 5; tick++) {
+        if (Object.keys(active_signals).length === 0) break;
+        let next_signals = {};
+
+        for (let curr_id in active_signals) {
+            curr_id = Number(curr_id);
+            if (!nodesMap[curr_id]) continue;
+            
+            let qutrit = active_signals[curr_id];
+            let gate_type = nodesMap[curr_id].params?.activeGate || 'ROUTER_SWAP';
+            if (gate_type === 'ROUTER_SWAP' || gate_type === 'SCALE_CORRECTOR') qutrit.applyGate(gate_type);
+
+            quantum_results_map[curr_id] = { id: curr_id, qutrit_state: qutrit.getProbabilities(), activeGate: gate_type };
+
+            edges.filter(e => e.from === curr_id).forEach(edge => {
+                let prop = qutrit.clone();
+                if (next_signals[edge.to]) next_signals[edge.to].add(prop);
+                else next_signals[edge.to] = prop;
+            });
+        }
+        active_signals = next_signals;
+    }
+    return Object.values(quantum_results_map);
+}
