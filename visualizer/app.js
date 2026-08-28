@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { generateHalfPoints, GideonWebCore } from '../core/GideonMath.js';
+import { generateHalfPoints, GideonWebCore } from '../core/GideonMath.js?v=dynamic';
 
 let customModelSource = null; 
 let customPoints = null;      
@@ -238,10 +238,23 @@ function updateScene() {
         }
         
         const basePtsObj = generateHalfPoints(ex, ez);
+        
+        // --- ДИНАМИЧЕСКОЕ ВЫЧИСЛЕНИЕ S-ПЕРЕХОДА ---
+        let splitIdx = Math.floor(basePtsObj.x.length * 0.62); 
+        if (basePtsObj.x.length > 0) {
+            let r0 = Math.sqrt(basePtsObj.x[0]**2 + basePtsObj.y[0]**2);
+            for(let i=0; i<basePtsObj.x.length; i++) {
+                let r = Math.sqrt(basePtsObj.x[i]**2 + basePtsObj.y[i]**2);
+                if (r0 - r > 1.0) { splitIdx = Math.max(0, i - 1); break; }
+            }
+        }
+        // ------------------------------------------
+
         let fullPts = [];
         for(let i=0; i<basePtsObj.x.length; i++) {
             fullPts.push(new THREE.Vector3(basePtsObj.x[i], basePtsObj.y[i], basePtsObj.z[i]));
         }
+        let aPts = fullPts.map(p => new THREE.Vector3(-p.x, -p.y, -p.z));
         
         let flowRightToLeft = [];
         for(let i=0; i<fullPts.length; i++) { flowRightToLeft.push(fullPts[i].clone()); }
@@ -264,9 +277,11 @@ function updateScene() {
             );
             nodeGroup.rotation.copy(euler);
 
-            const rightPts = fullPts.slice(0, 101);
-            const sPts = fullPts.slice(101, 101+61);
-            const leftPts = fullPts.map(p => new THREE.Vector3(-p.x, -p.y, -p.z));
+            // Идеальная бесшовная нарезка JSON-графа
+            const rightPts = fullPts.slice(0, splitIdx + 1);
+            const leftPts = aPts.slice(0, splitIdx + 1).reverse();
+            const sPts = fullPts.slice(splitIdx);
+            for(let i = aPts.length - 2; i >= splitIdx; i--) sPts.push(aPts[i]);
 
             nodeGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(rightPts), new THREE.LineBasicMaterial({ color: 0x00a0ff, transparent: true, opacity: 1.0 })));
             nodeGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(sPts), new THREE.LineBasicMaterial({ color: 0xffe600, transparent: true, opacity: 1.0 })));
@@ -324,6 +339,7 @@ function updateScene() {
         computeQuantumState(customModelSource.nodes, customModelSource.edges);
 
     } else {
+        // БАЗОВЫЙ РЕЖИМ (Сфираль / Диполь / Звезда)
         document.getElementById('statusHeader').innerText = "STATUS: ACTIVE • Q-ZERO CHIRALITY";
         document.getElementById('resetModelBtn').style.display = customPoints ? 'block' : 'none';
 
@@ -333,6 +349,17 @@ function updateScene() {
 
         let rawStruct = customPoints ? customPoints : generateHalfPoints(140, 190);
         let rawX = rawStruct.x, rawY = rawStruct.y, rawZ = rawStruct.z;
+
+        // --- ДИНАМИЧЕСКОЕ ВЫЧИСЛЕНИЕ S-ПЕРЕХОДА ДЛЯ БАЗЫ ---
+        let splitIdx = Math.floor(rawX.length * 0.62);
+        if (rawX.length > 0) {
+            let r0 = Math.sqrt(rawX[0]**2 + rawY[0]**2);
+            for(let i=0; i<rawX.length; i++) {
+                let r = Math.sqrt(rawX[i]**2 + rawY[i]**2);
+                if (r0 - r > 1.0) { splitIdx = Math.max(0, i - 1); break; }
+            }
+        }
+        // ----------------------------------------------------
 
         let centerGeo = new THREE.SphereGeometry(2.5, 16, 16);
         spiralGroup.add(new THREE.Mesh(centerGeo, new THREE.MeshBasicMaterial({ color: 0xffe600 })));
@@ -351,12 +378,20 @@ function updateScene() {
                 vectorLeft.copy(aPoints[15] || aPoints[0]);
             }
 
-            spiralGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(tPoints), new THREE.LineBasicMaterial({ color: 0x00e5ff, linewidth: 2, transparent: true, opacity: 0.7 })));
-            spiralGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(aPoints), new THREE.LineBasicMaterial({ color: 0xff3366, linewidth: 2, transparent: true, opacity: 0.7 })));
+            // Идеальная бесшовная нарезка
+            let rightPts = tPoints.slice(0, splitIdx + 1);
+            let leftPts = aPoints.slice(0, splitIdx + 1).reverse();
+            let sPts = tPoints.slice(splitIdx);
+            for(let i = aPoints.length - 2; i >= splitIdx; i--) sPts.push(aPoints[i]);
+
+            spiralGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(rightPts), new THREE.LineBasicMaterial({ color: 0x00e5ff, linewidth: 2, transparent: true, opacity: 0.7 })));
+            spiralGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(sPts), new THREE.LineBasicMaterial({ color: 0xffe600, linewidth: 2, transparent: true, opacity: 0.7 })));
+            spiralGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(leftPts), new THREE.LineBasicMaterial({ color: 0xff3366, linewidth: 2, transparent: true, opacity: 0.7 })));
 
             cachedCurvesData.push({ points: tPoints, color: 0x00ffff });
             cachedCurvesData.push({ points: aPoints, color: 0xff0055 });
 
+            // ДОПОЛНИТЕЛЬНЫЕ РЕЖИМЫ (РАЗВОРОТЫ)
             if (mode !== 'Single') {
                 let t2Points = [], a2Points = [];
                 for (let i = 0; i < rawX.length; i++) {
@@ -368,8 +403,15 @@ function updateScene() {
                     t2Points.push(new THREE.Vector3(p2.x, p2.y, p2.z));
                     a2Points.push(new THREE.Vector3(p3.x, p3.y, p3.z));
                 }
-                spiralGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(t2Points), new THREE.LineBasicMaterial({ color: 0x00ff88, linewidth: 2, transparent: true, opacity: 0.5 })));
-                spiralGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(a2Points), new THREE.LineBasicMaterial({ color: 0xff8800, linewidth: 2, transparent: true, opacity: 0.5 })));
+                
+                let rightPts2 = t2Points.slice(0, splitIdx + 1);
+                let leftPts2 = a2Points.slice(0, splitIdx + 1).reverse();
+                let sPts2 = t2Points.slice(splitIdx);
+                for(let i = a2Points.length - 2; i >= splitIdx; i--) sPts2.push(a2Points[i]);
+
+                spiralGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(rightPts2), new THREE.LineBasicMaterial({ color: 0x00ff88, linewidth: 2, transparent: true, opacity: 0.5 })));
+                spiralGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(sPts2), new THREE.LineBasicMaterial({ color: 0xffaa00, linewidth: 2, transparent: true, opacity: 0.5 })));
+                spiralGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(leftPts2), new THREE.LineBasicMaterial({ color: 0xff8800, linewidth: 2, transparent: true, opacity: 0.5 })));
 
                 cachedCurvesData.push({ points: t2Points, color: 0x55ffaa });
                 cachedCurvesData.push({ points: a2Points, color: 0xffaa00 });

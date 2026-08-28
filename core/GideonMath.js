@@ -1,4 +1,7 @@
 export function generateSphiralTopology(R = 140, H = 190) {
+    let junctionZ = H / 5.0; // Зона плавной деформации
+    let r_s = R / 2.0;
+
     // 1. Левый основной виток (вытягивается в положительном направлении по высоте: +H)
     let leftMainX = [], leftMainY = [], leftMainZ = [];
     for (let i = 0; i <= 100; i++) {
@@ -6,13 +9,12 @@ export function generateSphiralTopology(R = 140, H = 190) {
         let angle = 2 * Math.PI * t;
         leftMainX.push(R * Math.cos(angle));
         leftMainY.push(R * Math.sin(angle));
-        leftMainZ.push(H * (1 - t));
+        // ИСПРАВЛЕНО: Конечная координата витка идеально сходится с началом S-петли
+        leftMainZ.push(junctionZ + (H - junctionZ) * (1 - t)); 
     }
 
     // 2. Левый малый полувиток масштаба 0.5 (часть S-петли)
-    let r_s = R / 2.0;
     let leftHalfX = [], leftHalfY = [], leftHalfZ = [];
-    let junctionZ = H / 5.0;
     for (let i = 0; i <= 60; i++) {
         let t = i / 60.0;
         let angle = Math.PI * t;
@@ -22,7 +24,6 @@ export function generateSphiralTopology(R = 140, H = 190) {
     }
 
     // 3. Правый малый полувиток масштаба 0.5 (антипод с поворотом на 180° по оси X)
-    // При повороте на 180° по X: X без изменений, Y -> -Y, Z -> -Z
     let rightHalfX = [], rightHalfY = [], rightHalfZ = [];
     for (let i = 0; i <= 60; i++) {
         let t = i / 60.0;
@@ -39,7 +40,8 @@ export function generateSphiralTopology(R = 140, H = 190) {
         let angle = 2 * Math.PI * t;
         rightMainX.push(-R * Math.cos(angle));
         rightMainY.push(-R * Math.sin(angle));
-        rightMainZ.push(-H * (1 - t)); // Противофазное вытягивание по высоте вниз (-H)
+        // ИСПРАВЛЕНО: Сшивка с антисимметричным полувитком
+        rightMainZ.push(-junctionZ - (H - junctionZ) * (1 - t)); 
     }
 
     return {
