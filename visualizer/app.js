@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { generateHalfPoints, GideonWebCore } from '../core/GideonMath.js?v=dynamic';
+import { generateHalfPoints, GideonWebCore, computeQuantumNetwork } from '../core/GideonMath.js?v=dynamic';
 
 let customModelSource = null; 
 let customPoints = null;      
@@ -142,76 +142,71 @@ function clearGroup(group) {
 }
 
 async function computeQuantumState(nodes, edges) {
-    const graphData = { model_name: "Sfiral_Quantum_Circuit", nodes: nodes, edges: edges || [] };
     let logEl = document.getElementById('consoleLog');
-    logEl.innerHTML += `<div class="console-line type-sys">[NETWORK] Отправка топологии на динамическое ядро...</div>`;
+    logEl.innerHTML += `<div class="console-line type-sys">[NETWORK] Расчет топологии в автономном JS-ядре...</div>`;
     logEl.scrollTop = logEl.scrollHeight;
 
     try {
-        const response = await fetch('http://localhost:8000', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(graphData)
+        const startTime = performance.now();
+        // Автономный расчет без Python-сервера
+        const nodesQuantum = computeQuantumNetwork(nodes, edges || []);
+        const executionTime = (performance.now() - startTime).toFixed(2);
+        
+        logEl.innerHTML += `<div class="console-line type-qcore">⚡ [Q-CORE] Вычисление завершено за ${executionTime}мс. Интерференция просчитана.</div>`;
+        lastQuantumResults = nodesQuantum;
+
+        spiralGroup.children.forEach(group => {
+            if (group.type === 'Group' && group.children.length >= 3) {
+                group.children[0].material.opacity = 0.1;
+                group.children[1].material.opacity = 0.1;
+                group.children[2].material.opacity = 0.1;
+                group.children[0].material.color.setHex(0x002244);
+                group.children[1].material.color.setHex(0x444400);
+                group.children[2].material.color.setHex(0x440011);
+            }
+        });
+        
+        Object.values(globalNodesData).forEach(nodeData => {
+            if(nodeData.sphereMesh) nodeData.sphereMesh.visible = false;
         });
 
-        const result = await response.json();
-        
-        if (result.status === "success") {
-            logEl.innerHTML += `<div class="console-line type-qcore">⚡ [Q-CORE] Вычисление завершено за ${result.execution_time_ms}мс. Интерференция просчитана.</div>`;
-            lastQuantumResults = result.nodes_quantum;
+        nodesQuantum.forEach(qNode => {
+            const group = spiralGroup.getObjectByName(qNode.id);
+            const nodeData = globalNodesData[qNode.id];
 
-            spiralGroup.children.forEach(group => {
-                if (group.type === 'Group' && group.children.length >= 3) {
-                    group.children[0].material.opacity = 0.1;
-                    group.children[1].material.opacity = 0.1;
-                    group.children[2].material.opacity = 0.1;
-                    group.children[0].material.color.setHex(0x002244);
-                    group.children[1].material.color.setHex(0x444400);
-                    group.children[2].material.color.setHex(0x440011);
-                }
-            });
-            Object.values(globalNodesData).forEach(nodeData => {
-                if(nodeData.sphereMesh) nodeData.sphereMesh.visible = false;
-            });
+            if (group && group.children.length >= 3) {
+                let rMat = group.children[0].material; 
+                let sMat = group.children[1].material; 
+                let lMat = group.children[2].material; 
 
-            result.nodes_quantum.forEach(qNode => {
-                const group = spiralGroup.getObjectByName(qNode.id);
-                const nodeData = globalNodesData[qNode.id];
+                let pR = qNode.qutrit_state.R;
+                let pS = qNode.qutrit_state.S;
+                let pL = qNode.qutrit_state.L;
+                let totalEnergy = pR + pS + pL;
 
-                if (group && group.children.length >= 3) {
-                    let rMat = group.children[0].material; 
-                    let sMat = group.children[1].material; 
-                    let lMat = group.children[2].material; 
+                rMat.opacity = 0.25 + 0.75 * pR;
+                sMat.opacity = 0.25 + 0.75 * pS;
+                lMat.opacity = 0.25 + 0.75 * pL;
+                
+                rMat.color.setHex(pR > 0.05 ? 0x00e5ff : 0x004477);
+                sMat.color.setHex(pS > 0.05 ? 0xffe600 : 0x888800);
+                lMat.color.setHex(pL > 0.05 ? 0xff3366 : 0x880022);
 
-                    let pR = qNode.qutrit_state.R;
-                    let pS = qNode.qutrit_state.S;
-                    let pL = qNode.qutrit_state.L;
-                    let totalEnergy = pR + pS + pL;
-
-                    rMat.opacity = 0.25 + 0.75 * pR;
-                    sMat.opacity = 0.25 + 0.75 * pS;
-                    lMat.opacity = 0.25 + 0.75 * pL;
+                if (totalEnergy > 0.05 && nodeData && nodeData.sphereMesh) {
+                    nodeData.sphereMesh.visible = true;
+                    let scale = 1.0 + totalEnergy * 0.5; 
+                    nodeData.sphereMesh.scale.set(scale, scale, scale);
                     
-                    rMat.color.setHex(pR > 0.05 ? 0x00e5ff : 0x004477);
-                    sMat.color.setHex(pS > 0.05 ? 0xffe600 : 0x888800);
-                    lMat.color.setHex(pL > 0.05 ? 0xff3366 : 0x880022);
-
-                    if (totalEnergy > 0.05 && nodeData && nodeData.sphereMesh) {
-                        nodeData.sphereMesh.visible = true;
-                        let scale = 1.0 + totalEnergy * 0.5; 
-                        nodeData.sphereMesh.scale.set(scale, scale, scale);
-                        
-                        if (pR >= pL && pR >= pS) nodeData.sphereMesh.material.color.setHex(0x00e5ff);
-                        else if (pL >= pR && pL >= pS) nodeData.sphereMesh.material.color.setHex(0xff3366);
-                        else nodeData.sphereMesh.material.color.setHex(0xffe600);
-                    }
+                    if (pR >= pL && pR >= pS) nodeData.sphereMesh.material.color.setHex(0x00e5ff);
+                    else if (pL >= pR && pL >= pS) nodeData.sphereMesh.material.color.setHex(0xff3366);
+                    else nodeData.sphereMesh.material.color.setHex(0xffe600);
                 }
-            });
-            logEl.scrollTop = logEl.scrollHeight;
-        }
+            }
+        });
+        logEl.scrollTop = logEl.scrollHeight;
     } catch (error) {
-        console.error("❌ Ошибка связи с квантовым ядром:", error);
-        logEl.innerHTML += `<div class="console-line type-err">[ERROR] Сервер недоступен (localhost:8000)</div>`;
+        console.error("❌ Ошибка автономного расчета:", error);
+        logEl.innerHTML += `<div class="console-line type-err">[ERROR] Ошибка ядра: ${error.message}</div>`;
     }
 }
 
