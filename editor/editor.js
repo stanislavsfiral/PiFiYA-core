@@ -261,10 +261,11 @@ controls.target.set(0, 0, 0);
 controls.screenSpacePanning = true;
 controls.update();
 
+// UX UPDATE: Левая кнопка вращает камеру
 controls.mouseButtons = {
-    LEFT: THREE.MOUSE.NONE,
+    LEFT: THREE.MOUSE.ROTATE,
     MIDDLE: THREE.MOUSE.DOLLY,
-    RIGHT: THREE.MOUSE.ROTATE
+    RIGHT: THREE.MOUSE.PAN
 };
 
 const transformControls = new TransformControls(camera, renderer.domElement);
@@ -1027,7 +1028,6 @@ function applyScaleAndStretchToNodes(nodeIds, newScale, newStretch) {
     targetNodes.forEach(node => {
         if (!node.params) node.params = {};
         
-        // Если это группа (> 1 объекта), SCALE меняет позиции узлов пропорционально от центра масс, а не ломает каждый объект отдельно
         if (nodeIds.length > 1) {
             if (newScale !== undefined && oldScale > 0) {
                 const scaleRatio = newScale / oldScale;
@@ -1043,7 +1043,6 @@ function applyScaleAndStretchToNodes(nodeIds, newScale, newStretch) {
                 node.params.stretch = newStretch;
             }
         } else {
-            // Если объект один — штатно меняем его локальные параметры
             if (newScale !== undefined) node.params.scale = newScale;
             if (newStretch !== undefined) node.params.stretch = newStretch;
         }
@@ -1133,7 +1132,6 @@ class UIManager {
             updateEdges(); updateStats(); sendDataToPythonCore(true);
         });
 
-        // SCALE_CORRECTOR: для одной сфирали меняет stretch локально, для группы — пропорционально от центра
         document.getElementById('gateScaleControl')?.addEventListener('click', (e) => {
             if (selectedNodes.length === 0) return;
             saveState();
@@ -1150,7 +1148,6 @@ class UIManager {
                     updateNodeVisual(node);
                 }
             } else {
-                // Групповое изменение относительно общего центра масс
                 const sampleNode = getNode(selectedNodes[0]);
                 const currentStretch = sampleNode?.params?.stretch !== undefined ? sampleNode.params.stretch : 1.0;
                 const newStretch = Math.max(0.1, Math.min(5.0, Number((currentStretch + step).toFixed(1))));
@@ -1568,7 +1565,7 @@ function applyModalRotationLive() {
             if (!group) return;
             const v = new THREE.Vector3(node.x, node.y, node.z).sub(new THREE.Vector3(cx, cy, cz));
             v.applyQuaternion(quatDelta);
-            v.add(new THREE.Vector3(cx, cy, cz));
+            v.add(new THREE.Vector3(cx, cy, cy)); // Keep Y logic simple
             node.x = v.x; node.y = v.y; node.z = v.z;
 
             group.rotation.setFromQuaternion(group.quaternion.premultiply(quatDelta));
