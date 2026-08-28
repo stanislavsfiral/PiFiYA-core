@@ -160,7 +160,6 @@ async function computeQuantumState(nodes, edges) {
             logEl.innerHTML += `<div class="console-line type-qcore">⚡ [Q-CORE] Вычисление завершено за ${result.execution_time_ms}мс. Интерференция просчитана.</div>`;
             lastQuantumResults = result.nodes_quantum;
 
-            // 1. ПРЕ-ПАСС: Гасим все узлы до уровня "Спящего кристалла"
             spiralGroup.children.forEach(group => {
                 if (group.type === 'Group' && group.children.length >= 3) {
                     group.children[0].material.opacity = 0.1;
@@ -175,7 +174,6 @@ async function computeQuantumState(nodes, edges) {
                 if(nodeData.sphereMesh) nodeData.sphereMesh.visible = false;
             });
 
-            // 2. ЗАЖИГАЕМ АКТИВНЫЕ МАГИСТРАЛИ
             result.nodes_quantum.forEach(qNode => {
                 const group = spiralGroup.getObjectByName(qNode.id);
                 const nodeData = globalNodesData[qNode.id];
@@ -190,7 +188,6 @@ async function computeQuantumState(nodes, edges) {
                     let pL = qNode.qutrit_state.L;
                     let totalEnergy = pR + pS + pL;
 
-                    // Восстанавливаем видимость для активного узла
                     rMat.opacity = 0.25 + 0.75 * pR;
                     sMat.opacity = 0.25 + 0.75 * pS;
                     lMat.opacity = 0.25 + 0.75 * pL;
@@ -199,11 +196,8 @@ async function computeQuantumState(nodes, edges) {
                     sMat.color.setHex(pS > 0.05 ? 0xffe600 : 0x888800);
                     lMat.color.setHex(pL > 0.05 ? 0xff3366 : 0x880022);
 
-                    // Если сигнал не угас, запускаем хроноквант
                     if (totalEnergy > 0.05 && nodeData && nodeData.sphereMesh) {
                         nodeData.sphereMesh.visible = true;
-                        
-                        // Скромное увеличение размера при сильном сигнале
                         let scale = 1.0 + totalEnergy * 0.5; 
                         nodeData.sphereMesh.scale.set(scale, scale, scale);
                         
@@ -278,7 +272,6 @@ function updateScene() {
             nodeGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(sPts), new THREE.LineBasicMaterial({ color: 0xffe600, transparent: true, opacity: 1.0 })));
             nodeGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(leftPts), new THREE.LineBasicMaterial({ color: 0xff4444, transparent: true, opacity: 1.0 })));
             
-            // МАЛЕНЬКИЙ центр узла (радиус 2 вместо 6)
             let centerMesh = new THREE.Mesh(new THREE.SphereGeometry(2, 16, 16), new THREE.MeshBasicMaterial({ color: 0xffaa00 }));
             nodeGroup.add(centerMesh);
 
@@ -287,7 +280,6 @@ function updateScene() {
             const pos = new THREE.Vector3(px, py, pz);
             let worldPath = flowRightToLeft.map(p => p.clone().applyEuler(euler).add(pos));
 
-            // МАЛЕНЬКИЙ хроноквант (радиус 2.5 вместо 6)
             let sphereMesh = new THREE.Mesh(new THREE.SphereGeometry(2.5, 16, 16), new THREE.MeshBasicMaterial({ color: 0x00ffcc }));
             sphereMesh.visible = false; 
             spiralGroup.add(sphereMesh);
@@ -321,7 +313,6 @@ function updateScene() {
             });
         }
         
-        // --- ДИНАМИЧЕСКАЯ ЦЕНТРОВКА КАМЕРЫ ---
         const box = new THREE.Box3().setFromObject(spiralGroup);
         const center = new THREE.Vector3();
         box.getCenter(center);
@@ -333,7 +324,6 @@ function updateScene() {
         computeQuantumState(customModelSource.nodes, customModelSource.edges);
 
     } else {
-        // --- БАЗОВАЯ ГЕНЕРАЦИЯ ---
         document.getElementById('statusHeader').innerText = "STATUS: ACTIVE • Q-ZERO CHIRALITY";
         document.getElementById('resetModelBtn').style.display = customPoints ? 'block' : 'none';
 
@@ -344,7 +334,6 @@ function updateScene() {
         let rawStruct = customPoints ? customPoints : generateHalfPoints(140, 190);
         let rawX = rawStruct.x, rawY = rawStruct.y, rawZ = rawStruct.z;
 
-        // МАЛЕНЬКИЙ центр
         let centerGeo = new THREE.SphereGeometry(2.5, 16, 16);
         spiralGroup.add(new THREE.Mesh(centerGeo, new THREE.MeshBasicMaterial({ color: 0xffe600 })));
 
@@ -387,7 +376,6 @@ function updateScene() {
             }
         }
 
-        // МАЛЕНЬКИЕ хронокванты
         const sphereGeo = new THREE.SphereGeometry(3, 16, 16);
         cachedCurvesData.forEach(curve => {
             let mesh = new THREE.Mesh(sphereGeo, new THREE.MeshBasicMaterial({ color: curve.color }));
