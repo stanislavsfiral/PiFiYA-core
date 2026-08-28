@@ -1,24 +1,61 @@
-export function generateHalfPoints(R = 140, H = 190) {
-    let ptsX = [], ptsY = [], ptsZ = [];
-    let junctionZ = H / 5.0;
-
+export function generateSphiralTopology(R = 140, H = 190) {
+    // 1. Левый основной виток (вытягивается в положительном направлении по высоте: +H)
+    let leftMainX = [], leftMainY = [], leftMainZ = [];
     for (let i = 0; i <= 100; i++) {
         let t = i / 100.0;
         let angle = 2 * Math.PI * t;
-        ptsX.push(R * Math.cos(angle));
-        ptsY.push(R * Math.sin(angle));
-        ptsZ.push(junctionZ + (H - junctionZ) * (1 - t));
+        leftMainX.push(R * Math.cos(angle));
+        leftMainY.push(R * Math.sin(angle));
+        leftMainZ.push(H * (1 - t));
     }
 
+    // 2. Левый малый полувиток масштаба 0.5 (часть S-петли)
     let r_s = R / 2.0;
+    let leftHalfX = [], leftHalfY = [], leftHalfZ = [];
+    let junctionZ = H / 5.0;
     for (let i = 0; i <= 60; i++) {
         let t = i / 60.0;
         let angle = Math.PI * t;
-        ptsX.push(r_s + r_s * Math.cos(angle));
-        ptsY.push(r_s * Math.sin(angle));
-        ptsZ.push(junctionZ * (1 - t));
+        leftHalfX.push(r_s + r_s * Math.cos(angle));
+        leftHalfY.push(r_s * Math.sin(angle));
+        leftHalfZ.push(junctionZ * (1 - t));
     }
-    return { x: ptsX, y: ptsY, z: ptsZ };
+
+    // 3. Правый малый полувиток масштаба 0.5 (антипод с поворотом на 180° по оси X)
+    // При повороте на 180° по X: X без изменений, Y -> -Y, Z -> -Z
+    let rightHalfX = [], rightHalfY = [], rightHalfZ = [];
+    for (let i = 0; i <= 60; i++) {
+        let t = i / 60.0;
+        let angle = Math.PI * t;
+        rightHalfX.push(-(r_s + r_s * Math.cos(angle)));
+        rightHalfY.push(-(r_s * Math.sin(angle)));
+        rightHalfZ.push(-junctionZ * (1 - t));
+    }
+
+    // 4. Правый основной виток (зеркальный антипод, вытягивается в противоположном направлении: -H)
+    let rightMainX = [], rightMainY = [], rightMainZ = [];
+    for (let i = 0; i <= 100; i++) {
+        let t = i / 100.0;
+        let angle = 2 * Math.PI * t;
+        rightMainX.push(-R * Math.cos(angle));
+        rightMainY.push(-R * Math.sin(angle));
+        rightMainZ.push(-H * (1 - t)); // Противофазное вытягивание по высоте вниз (-H)
+    }
+
+    return {
+        left: { main: { x: leftMainX, y: leftMainY, z: leftMainZ }, half: { x: leftHalfX, y: leftHalfY, z: leftHalfZ } },
+        right: { main: { x: rightMainX, y: rightMainY, z: rightMainZ }, half: { x: rightHalfX, y: rightHalfY, z: rightHalfZ } }
+    };
+}
+
+// Обратная совместимость для старых вызовов точек
+export function generateHalfPoints(R = 140, H = 190) {
+    let topo = generateSphiralTopology(R, H);
+    return {
+        x: topo.left.main.x.concat(topo.left.half.x),
+        y: topo.left.main.y.concat(topo.left.half.y),
+        z: topo.left.main.z.concat(topo.left.half.z)
+    };
 }
 
 export class GideonWebCore {
@@ -30,26 +67,36 @@ export class GideonWebCore {
         return packet.map(p => p * (modeFlag ? -1 : 1));
     }
 
+    // Оператор S-перехода с учетом ламинарной инверсии и поворота на 180° по оси X
     sTransitionOperator(s1, s2, mode) {
         let sum = s1 + s2;
         if (mode === 'Axis X') {
             return [s1 === s2 ? 0 : -s2, s1 === s2 ? 0 : -s1];
         } else if (mode === 'Axis Y') {
             let circ = (s1 + s2 === 0) ? 1 : (s1 > s2 ? -1 : 1);
-            return [Math.round(s1 * 0.5), circ];
+            return [Math.round(s1 * 0.5), -circ];
         } else if (mode === 'Axis Z') {
-            if (sum === 0 && s1 !== 0) return [-s1, -s2];
-            return [Math.max(-1, Math.min(1, -s2)), Math.max(-1, Math.min(1, -s1))];
+            if (sum === 0 && s1 !== 0) return [s1, s2];
+            return [Math.max(-1, Math.min(1, s2)), Math.max(-1, Math.min(1, s1))];
         } else {
             if (sum === 0 && s1 !== 0) return [-s1, -s2];
             let factor = Math.abs(sum) > 0 ? 2.0 : 1.0;
-            return [Math.round(Math.max(-1, Math.min(1, s1 * factor))), Math.round(Math.max(-1, Math.min(1, s2 * factor)))];
+            // Учет пространственной инверсии второго потока (-s2)
+            return [
+                Math.round(Math.max(-1, Math.min(1, s1 * factor))), 
+                Math.round(Math.max(-1, Math.min(1, -s2 * factor)))
+            ];
         }
     }
 
     routeChiralStream(streamA, streamB, chiralitySign, mode) {
-        let multiplier = (mode === 'Axis Y') ? 1 : chiralitySign;
-        return [streamA.map(a => a * multiplier), streamB.map(b => b * multiplier)];
+        if (mode === 'Axis Y') {
+            return [streamA, streamB];
+        }
+        // Строгая зеркальная антисимметрия хиральностей витков-антиподов
+        let routedA = streamA.map(a => a * chiralitySign);
+        let routedB = streamB.map(b => b * (-chiralitySign)); 
+        return [routedA, routedB];
     }
 
     processStream(packetA, packetB, nCores, mode, harmAxis) {

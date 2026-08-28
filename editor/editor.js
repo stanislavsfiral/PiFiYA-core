@@ -15,7 +15,11 @@ const MAX_UNDO = 30;
 let clipboard = null;
 let pythonTimeout = null;
 
-// Хронологическая цепочка действий для обучения ИИ
+// Состояние режима ручной трассировки портов
+let isWiringMode = false;
+let wiringSource = null;
+let interactivePorts = [];
+
 let designTimeline = [];
 
 function logAction(actionType, payload) {
@@ -29,18 +33,15 @@ function logAction(actionType, payload) {
     console.log(`🧠 [AI Timeline Log]: ${actionType}`, payload);
 }
 
-// Виртуальный контейнер для управления группой выделенных объектов
 const groupTransformProxy = new THREE.Group();
 groupTransformProxy.name = "GIDEON_Group_Proxy";
 
-// Увеличенная яркость, насыщенность и толщина линий для идеальной видимости
 const batchLines = {
     right: new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xff3333, linewidth: 3, transparent: true, opacity: 1.0 })),
     left: new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x00c0ff, linewidth: 3, transparent: true, opacity: 1.0 })),
     s: new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xffea00, linewidth: 3, transparent: true, opacity: 1.0 }))
 };
 
-// Кэш геометрий сфиралей с учетом флагов отображения витков
 const geometryCache = new Map();
 
 function getCachedSfiralGeometries(N, scale, stretch, subParams, showRight, showLeft) {
@@ -147,6 +148,50 @@ function compileTopologyToQuantumCircuit() {
     }
 }
 
+function updateQuantumColors(nodesQuantum) {
+    if (!nodesQuantum || !Array.isArray(nodesQuantum)) return;
+
+    nodesQuantum.forEach(qData => {
+        const nodeId = qData.id;
+        const state = qData.qutrit_state;
+        if (!state) return;
+
+        const L = state.L || 0;
+        const S = state.S || 0;
+        const R = state.R || 0;
+
+        let colorHex = 0xffaa00; 
+        const threshold = 0.5;
+
+        if (R > threshold) {
+            colorHex = 0xff3333; 
+        } else if (L > threshold) {
+            colorHex = 0x00c0ff; 
+        } else if (S > threshold) {
+            colorHex = 0xffea00; 
+        } else {
+            colorHex = 0x00ffaa; 
+        }
+
+        const group = meshMap.get(nodeId);
+        if (group) {
+            group.children.forEach(child => {
+                if (child.userData && child.userData.part === 'center') {
+                    child.material.color.setHex(colorHex);
+                    
+                    if (colorHex === 0x00ffaa) {
+                        child.material.opacity = 1.0;
+                        child.scale.set(1.2, 1.2, 1.2);
+                    } else {
+                        child.material.opacity = 0.85;
+                        child.scale.set(1.0, 1.0, 1.0);
+                    }
+                }
+            });
+        }
+    });
+}
+
 // ============================================================
 // 3. ОНЛАЙН-МОСТ С PYTHON-ЯДРОМ И АВТОСОХРАНЕНИЕМ В AI_MEMORY
 // ============================================================
@@ -171,8 +216,13 @@ async function sendDataToPythonCore(isSaving = true) {
             const consoleEl = document.getElementById('console');
             if (consoleEl) {
                 consoleEl.style.display = 'block';
-                consoleEl.innerHTML += `<div class="line success">⚡ [AI Memory авто-сейв]: Узлов: ${result.computed_nodes}</div>`;
+                consoleEl.innerHTML += `<div class="line success">⚡ [Qutrit Core]: Узлов: ${result.computed_nodes}, Время расчета: ${result.execution_time_ms}мс</div>`;
             }
+            
+            if (result.nodes_quantum) {
+                updateQuantumColors(result.nodes_quantum);
+            }
+
             compileTopologyToQuantumCircuit();
         }
     } catch (err) {
@@ -210,6 +260,9 @@ scene.add(objectsGroup);
 scene.add(groupTransformProxy);
 
 objectsGroup.add(batchLines.right, batchLines.left, batchLines.s);
+
+const wiringPortMeshes = new THREE.Group();
+scene.add(wiringPortMeshes);
 
 const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 1, 5000);
 camera.position.set(600, 400, 800);
@@ -277,6 +330,8 @@ transformControls.addEventListener('change', () => {
                 node.y = transformControls.object.position.y;
                 node.z = transformControls.object.position.z;
                 if (transformControls.mode === 'rotate') {
+                    if (!node.params) node.params = {};
+                    if (!node.params.angles) node.params.angles = [0, 0, 0];
                     node.params.angles = [
                         THREE.MathUtils.radToDeg(group.rotation.x),
                         THREE.MathUtils.radToDeg(group.rotation.y),
@@ -322,6 +377,7 @@ transformControls.addEventListener('change', () => {
                 node.z = v.z;
 
                 group.rotation.setFromQuaternion(group.quaternion.premultiply(deltaQuat));
+                if (!node.params) node.params = {};
                 node.params.angles = [
                     THREE.MathUtils.radToDeg(group.rotation.x),
                     THREE.MathUtils.radToDeg(group.rotation.y),
@@ -333,6 +389,7 @@ transformControls.addEventListener('change', () => {
         updateEdges();
         autoConnectStuckNodes();
     }
+    updateWiringPorts(); 
 });
 
 transformControls.addEventListener('mouseUp', () => {
@@ -342,7 +399,7 @@ transformControls.addEventListener('mouseUp', () => {
     if (selectedNodes.length === 1) {
         const node = getNode(selectedNodes[0]);
         if (node) {
-            logAction('TRANSFORM_NODE', { id: node.id, x: node.x, y: node.y, z: node.z, angles: node.params.angles });
+            logAction('TRANSFORM_NODE', { id: node.id, x: node.x, y: node.y, z: node.z, angles: node.params?.angles || [0,0,0] });
         }
     } else if (selectedNodes.length > 1) {
         logAction('TRANSFORM_GROUP', { nodes: selectedNodes });
@@ -378,6 +435,9 @@ function applySubScale(pts, subParams, stretch = 1.0) {
 
 function createSfiralGroup(node) {
     const group = new THREE.Group();
+    if (!node.params) {
+        node.params = { scale: 1.0, stretch: 1.0, N: 5, angles: [0,0,0], showRight: true, showS: true, showLeft: true, showSLeft: true };
+    }
     const nodeScale = node.params.scale !== undefined ? node.params.scale : 1.0;
     const stretch = node.params.stretch !== undefined ? node.params.stretch : 1.0;
     const N = node.params.N || 5;
@@ -467,6 +527,53 @@ function updateAllNodes() {
     updateStats();
     updateSelectionHighlights();
     drawAutoEdges();
+    updateWiringPorts();
+}
+
+function updateWiringPorts() {
+    wiringPortMeshes.clear();
+    interactivePorts = [];
+    if (!isWiringMode) return;
+
+    graph.nodes.forEach(node => {
+        const group = meshMap.get(node.id);
+        if (!group) return;
+
+        const p = node.params || {};
+        const N = p.N || 5, sc = p.scale ?? 1.0, st = p.stretch ?? 1.0;
+        const geom = getCachedSfiralGeometries(N, sc, st, p, p.showRight ?? true, p.showLeft ?? true);
+
+        const offsetIdx = 6; 
+        const markerRadius = 4 * sc;
+
+        if (p.showRight !== false && geom.rightPts && geom.rightPts.length > offsetIdx) {
+            const entryPos = geom.rightPts[offsetIdx].clone().applyEuler(group.rotation).add(group.position);
+            const entryMesh = new THREE.Mesh(new THREE.SphereGeometry(markerRadius, 16, 16), new THREE.MeshBasicMaterial({color: 0x00ffaa, transparent: true, opacity: 0.9}));
+            entryMesh.position.copy(entryPos);
+            wiringPortMeshes.add(entryMesh);
+            interactivePorts.push({ mesh: entryMesh, nodeId: node.id, type: 'entry' });
+        } else if (p.showRight === false && p.showS !== false && geom.sRightPts && geom.sRightPts.length > offsetIdx) {
+            const entryPos = geom.sRightPts[offsetIdx].clone().applyEuler(group.rotation).add(group.position);
+            const entryMesh = new THREE.Mesh(new THREE.SphereGeometry(markerRadius, 16, 16), new THREE.MeshBasicMaterial({color: 0xffea00, transparent: true, opacity: 0.9}));
+            entryMesh.position.copy(entryPos);
+            wiringPortMeshes.add(entryMesh);
+            interactivePorts.push({ mesh: entryMesh, nodeId: node.id, type: 'entry' });
+        }
+        
+        if (p.showLeft !== false && geom.leftPts && geom.leftPts.length > offsetIdx) {
+            const exitPos = geom.leftPts[offsetIdx].clone().applyEuler(group.rotation).add(group.position);
+            const exitMesh = new THREE.Mesh(new THREE.SphereGeometry(markerRadius, 16, 16), new THREE.MeshBasicMaterial({color: 0xff0044, transparent: true, opacity: 0.9}));
+            exitMesh.position.copy(exitPos);
+            wiringPortMeshes.add(exitMesh);
+            interactivePorts.push({ mesh: exitMesh, nodeId: node.id, type: 'exit' });
+        } else if (p.showLeft === false && p.showSLeft !== false && geom.sLeftPts && geom.sLeftPts.length > offsetIdx) {
+            const exitPos = geom.sLeftPts[offsetIdx].clone().applyEuler(group.rotation).add(group.position);
+            const exitMesh = new THREE.Mesh(new THREE.SphereGeometry(markerRadius, 16, 16), new THREE.MeshBasicMaterial({color: 0xff8800, transparent: true, opacity: 0.9}));
+            exitMesh.position.copy(exitPos);
+            wiringPortMeshes.add(exitMesh);
+            interactivePorts.push({ mesh: exitMesh, nodeId: node.id, type: 'exit' });
+        }
+    });
 }
 
 function updateEdges() {
@@ -485,14 +592,31 @@ function updateEdges() {
         const toGroup = meshMap.get(edge.to);
         if (!fromNode || !toNode || !fromGroup || !toGroup) return;
 
-        const N1 = fromNode.params.N || 5, sc1 = fromNode.params.scale ?? 1.0, st1 = fromNode.params.stretch ?? 1.0;
-        const geom1 = getCachedSfiralGeometries(N1, sc1, st1, fromNode.params, fromNode.params.showRight, fromNode.params.showLeft);
+        const p1 = fromNode.params || {};
+        const p2 = toNode.params || {};
+        const N1 = p1.N || 5, sc1 = p1.scale ?? 1.0, st1 = p1.stretch ?? 1.0;
+        const geom1 = getCachedSfiralGeometries(N1, sc1, st1, p1, p1.showRight ?? true, p1.showLeft ?? true);
         
-        const N2 = toNode.params.N || 5, sc2 = toNode.params.scale ?? 1.0, st2 = toNode.params.stretch ?? 1.0;
-        const geom2 = getCachedSfiralGeometries(N2, sc2, st2, toNode.params, toNode.params.showRight, toNode.params.showLeft);
+        const N2 = p2.N || 5, sc2 = p2.scale ?? 1.0, st2 = p2.stretch ?? 1.0;
+        const geom2 = getCachedSfiralGeometries(N2, sc2, st2, p2, p2.showRight ?? true, p2.showLeft ?? true);
 
-        const rot1 = fromNode.params.angles || [0, 0, 0];
-        const rot2 = toNode.params.angles || [0, 0, 0];
+        const r1_free = geom1.rightPts[0].clone().applyEuler(fromGroup.rotation).add(fromGroup.position);
+        const l1_free = geom1.leftPts[0].clone().applyEuler(fromGroup.rotation).add(fromGroup.position);
+
+        const r2_free = geom2.rightPts[0].clone().applyEuler(toGroup.rotation).add(toGroup.position);
+        const l2_free = geom2.leftPts[0].clone().applyEuler(toGroup.rotation).add(toGroup.position);
+
+        if (edge.type === 'manual_wire') {
+            const geo = new THREE.BufferGeometry().setFromPoints([l1_free, r2_free]);
+            const mat = new THREE.LineBasicMaterial({ color: 0xffaa00, linewidth: 4, transparent: true, opacity: 0.9 });
+            const line = new THREE.Line(geo, mat);
+            objectsGroup.add(line);
+            chronoBridgeLines.push(line);
+            return; 
+        }
+
+        const rot1 = p1.angles || [0, 0, 0];
+        const rot2 = p2.angles || [0, 0, 0];
         const diffY = Math.abs((rot2[1] - rot1[1]) % 360);
         const diffZ = Math.abs((rot2[2] - rot1[2]) % 360);
 
@@ -502,33 +626,27 @@ function updateEdges() {
         const isNotFlipped = (diffY < 5 || Math.abs(diffY - 360) < 5) && 
                              (diffZ < 5 || Math.abs(diffZ - 360) < 5);
 
-        const r1_free = geom1.rightPts[0].clone().applyEuler(fromGroup.rotation).add(fromGroup.position);
-        const l1_free = geom1.leftPts[0].clone().applyEuler(fromGroup.rotation).add(fromGroup.position);
-
-        const r2_free = geom2.rightPts[0].clone().applyEuler(toGroup.rotation).add(toGroup.position);
-        const l2_free = geom2.leftPts[0].clone().applyEuler(toGroup.rotation).add(toGroup.position);
-
         if (isFlipped180) {
-            if (fromNode.params.showRight && toNode.params.showRight) {
+            if ((p1.showRight ?? true) && (p2.showRight ?? true)) {
                 const distR = r1_free.distanceTo(r2_free);
                 if (distR < MAX_CONNECTION_DIST) {
                     points.right.push(r1_free, r2_free);
                 }
             }
-            if (fromNode.params.showLeft && toNode.params.showLeft) {
+            if ((p1.showLeft ?? true) && (p2.showLeft ?? true)) {
                 const distL = l1_free.distanceTo(l2_free);
                 if (distL < MAX_CONNECTION_DIST) {
                     points.left.push(l1_free, l2_free);
                 }
             }
         } else if (isNotFlipped) {
-            if (fromNode.params.showRight && toNode.params.showLeft) {
+            if ((p1.showRight ?? true) && (p2.showLeft ?? true)) {
                 const distRL = r1_free.distanceTo(l2_free);
                 if (distRL < MAX_CONNECTION_DIST) {
                     points.right.push(r1_free, l2_free);
                 }
             }
-            if (fromNode.params.showLeft && toNode.params.showRight) {
+            if ((p1.showLeft ?? true) && (p2.showRight ?? true)) {
                 const distLR = l1_free.distanceTo(r2_free);
                 if (distLR < MAX_CONNECTION_DIST) {
                     points.left.push(l1_free, r2_free);
@@ -541,25 +659,6 @@ function updateEdges() {
         batchLines[k].geometry.dispose();
         batchLines[k].geometry = new THREE.BufferGeometry().setFromPoints(points[k]);
     });
-
-    if (graph.nodes.length <= 50) {
-        let chronoLinks = updateChronoQuantumLinks();
-        chronoLinks.forEach(link => {
-            let n1 = getNode(link.from);
-            let n2 = getNode(link.to);
-            if (!n1 || !n2) return;
-            let pos1 = new THREE.Vector3(n1.x, n1.y, n1.z);
-            let pos2 = new THREE.Vector3(n2.x, n2.y, n2.z);
-            let geo = new THREE.BufferGeometry().setFromPoints([pos1, pos2]);
-            let lineColor = link.chirality > 0 ? 0x00ffcc : 0xff8800;
-            if (link.sharedState) lineColor = 0xffaa00;
-            let mat = new THREE.LineBasicMaterial({ color: lineColor, transparent: true, opacity: 0.7 });
-            let line = new THREE.Line(geo, mat);
-            line.userData = { isChronoBridge: true };
-            objectsGroup.add(line);
-            chronoBridgeLines.push(line);
-        });
-    }
 
     drawAutoEdges();
     updateStats();
@@ -589,14 +688,16 @@ function drawAutoEdges() {
             const g2 = meshMap.get(n2.id);
             if (!g1 || !g2) continue;
 
-            const N1 = n1.params.N || 5, sc1 = n1.params.scale ?? 1.0, st1 = n1.params.stretch ?? 1.0;
-            const geom1 = getCachedSfiralGeometries(N1, sc1, st1, n1.params, n1.params.showRight, n1.params.showLeft);
+            const p1 = n1.params || {};
+            const p2 = n2.params || {};
+            const N1 = p1.N || 5, sc1 = p1.scale ?? 1.0, st1 = p1.stretch ?? 1.0;
+            const geom1 = getCachedSfiralGeometries(N1, sc1, st1, p1, p1.showRight ?? true, p1.showLeft ?? true);
             
-            const N2 = n2.params.N || 5, sc2 = n2.params.scale ?? 1.0, st2 = n2.params.stretch ?? 1.0;
-            const geom2 = getCachedSfiralGeometries(N2, sc2, st2, n2.params, n2.params.showRight, n2.params.showLeft);
+            const N2 = p2.N || 5, sc2 = p2.scale ?? 1.0, st2 = p2.stretch ?? 1.0;
+            const geom2 = getCachedSfiralGeometries(N2, sc2, st2, p2, p2.showRight ?? true, p2.showLeft ?? true);
 
-            const rot1 = n1.params.angles || [0, 0, 0];
-            const rot2 = n2.params.angles || [0, 0, 0];
+            const rot1 = p1.angles || [0, 0, 0];
+            const rot2 = p2.angles || [0, 0, 0];
             const diffY = Math.abs((rot2[1] - rot1[1]) % 360);
             const diffZ = Math.abs((rot2[2] - rot1[2]) % 360);
 
@@ -615,17 +716,17 @@ function drawAutoEdges() {
             const checkPointsPairs = [];
 
             if (isFlipped180) {
-                if (n1.params.showRight && n2.params.showRight) {
+                if ((p1.showRight ?? true) && (p2.showRight ?? true)) {
                     checkPointsPairs.push({ p1: r1_free, p2: r2_free, color: 0xff3333 });
                 }
-                if (n1.params.showLeft && n2.params.showLeft) {
+                if ((p1.showLeft ?? true) && (p2.showLeft ?? true)) {
                     checkPointsPairs.push({ p1: l1_free, p2: l2_free, color: 0x00c0ff });
                 }
             } else if (isNotFlipped) {
-                if (n1.params.showRight && n2.params.showLeft) {
+                if ((p1.showRight ?? true) && (p2.showLeft ?? true)) {
                     checkPointsPairs.push({ p1: r1_free, p2: l2_free, color: 0xff3333 });
                 }
-                if (n1.params.showLeft && n2.params.showRight) {
+                if ((p1.showLeft ?? true) && (p2.showRight ?? true)) {
                     checkPointsPairs.push({ p1: l1_free, p2: r2_free, color: 0x00c0ff });
                 }
             }
@@ -645,61 +746,37 @@ function drawAutoEdges() {
     }
 }
 
-function updateChronoQuantumLinks() {
-    let activeChronoLinks = [];
-    for (let i = 0; i < graph.nodes.length; i++) {
-        for (let j = i + 1; j < graph.nodes.length; j++) {
-            let n1 = graph.nodes[i];
-            let n2 = graph.nodes[j];
-            let bridge = walshEngine.evaluateChainBridge(n1, n2);
-            if (bridge.isBridge) {
-                let isSuperposition = (n1.quantumState?.intensity < 0.5 && n2.quantumState?.intensity < 0.5);
-                activeChronoLinks.push({
-                    from: n1.id, to: n2.id,
-                    weight: bridge.weight, chirality: bridge.chirality,
-                    sharedState: isSuperposition || bridge.sharedState
-                });
-            }
-        }
-    }
-    return activeChronoLinks;
-}
-
 function updateStats() {
-    document.getElementById('nodeCount').textContent = `Сфиралей: ${graph.nodes.length}`;
+    const nodeCountEl = document.getElementById('nodeCount');
+    const edgeCountEl = document.getElementById('edgeCount');
+    const paramCountEl = document.getElementById('paramCount');
+    if (!nodeCountEl || !edgeCountEl || !paramCountEl) return;
+
+    nodeCountEl.textContent = `Сфиралей: ${graph.nodes.length}`;
     let totalEdges = graph.edges.length;
     let leftCount = graph.edges.filter(e => e.type === 'left_polarization').length;
     let rightCount = graph.edges.filter(e => e.type === 'right_polarization').length;
     let sLoopCount = graph.edges.filter(e => e.type === 's_loop').length;
     
     graph.nodes.forEach(n => {
-        if (n.params.showS) sLoopCount++;
-        if (n.params.showSLeft) sLoopCount++;
+        const p = n.params || {};
+        if (p.showS !== false) sLoopCount++;
+        if (p.showSLeft !== false) sLoopCount++;
     });
 
-    document.getElementById('edgeCount').textContent = `Хроноквантов: ${totalEdges + graph.nodes.length * 2} (L:${leftCount} | R:${rightCount} | S:${sLoopCount})`;
+    edgeCountEl.textContent = `Хроноквантов: ${totalEdges + graph.nodes.length * 2} (L:${leftCount} | R:${rightCount} | S:${sLoopCount})`;
     let totalParams = 0;
     graph.nodes.forEach(n => { totalParams += 20; });
     totalParams += totalEdges * 2;
-    document.getElementById('paramCount').textContent = `Параметров: ${totalParams}`;
+    paramCountEl.textContent = `Параметров: ${totalParams}`;
 }
 
 // ============================================================
 // 6. ВЫДЕЛЕНИЕ И ТРАНСФОРМАЦИЯ И АВТОВЫРАВНИВАНИЕ (СНАППИНГ)
 // ============================================================
 function snapSelectedObjects(tolerance = 3.0) {
-    // Если ничего не выделено, автоматически берем ВСЕ узлы на сцене
-    const targetIds = (selectedNodes && selectedNodes.length > 0) 
-        ? selectedNodes 
-        : graph.nodes.map(n => n.id);
-
-    if (targetIds.length === 0) {
-        console.warn("⚠️ На сцене нет сфиралей для выравнивания.");
-        if (typeof showConsoleMessage === 'function') {
-            showConsoleMessage("⚠️ Сцена пуста!");
-        }
-        return;
-    }
+    const targetIds = (selectedNodes && selectedNodes.length > 0) ? selectedNodes : graph.nodes.map(n => n.id);
+    if (targetIds.length === 0) return;
 
     saveState();
     let count = 0;
@@ -709,8 +786,7 @@ function snapSelectedObjects(tolerance = 3.0) {
         const group = meshMap.get(id);
         if (!node || !group) return;
 
-        // 1. Выравнивание вращения по осям X, Y, Z (кратные 90°)
-        if (node.params.angles) {
+        if (node.params && node.params.angles) {
             node.params.angles = node.params.angles.map(currentDeg => {
                 let targetDeg = Math.round(currentDeg / 90) * 90;
                 if (Math.abs(currentDeg - targetDeg) <= tolerance) {
@@ -727,7 +803,6 @@ function snapSelectedObjects(tolerance = 3.0) {
             );
         }
 
-        // 2. Выравнивание координат позиции по всем трем осям (X, Y, Z)
         ['x', 'y', 'z'].forEach(axis => {
             let currentPos = node[axis];
             let targetPos = Math.round(currentPos);
@@ -743,12 +818,10 @@ function snapSelectedObjects(tolerance = 3.0) {
 
     updateEdges();
     updateStats();
+    updateWiringPorts();
     logAction('SNAP_ALL_OR_SELECTED', { targets: targetIds, tolerance, adjustedCount: count });
     sendDataToPythonCore(true);
-    
-    console.log(`🧲 Выравнивание применено (${selectedNodes.length > 0 ? 'к выделению' : 'ко ВСЕЙ СЦЕНЕ'}) с допуском ±${tolerance}. Скорректировано параметров: ${count}`);
 }
-
 window.snapSelectedObjects = snapSelectedObjects;
 
 function updateSelectionHighlights() {
@@ -879,12 +952,12 @@ function saveState() {
         nodes: graph.nodes.map(n => ({
             ...n,
             params: {
-                ...n.params,
-                angles: [...n.params.angles],
-                rightSub: { ...n.params.rightSub },
-                leftSub: { ...n.params.leftSub },
-                sRightSub: { ...n.params.sRightSub },
-                sLeftSub: { ...n.params.sLeftSub }
+                ...(n.params || {}),
+                angles: n.params?.angles ? [...n.params.angles] : [0,0,0],
+                rightSub: n.params?.rightSub ? { ...n.params.rightSub } : { height: 100 },
+                leftSub: n.params?.leftSub ? { ...n.params.leftSub } : { height: 100 },
+                sRightSub: n.params?.sRightSub ? { ...n.params.sRightSub } : { height: 100 },
+                sLeftSub: n.params?.sLeftSub ? { ...n.params.sLeftSub } : { height: 100 }
             }
         })),
         edges: graph.edges.map(e => ({ ...e }))
@@ -895,10 +968,7 @@ function saveState() {
 }
 
 function copySelected() {
-    if (selectedNodes.length === 0) {
-        alert('Выберите хотя бы одну сфираль для копирования');
-        return;
-    }
+    if (selectedNodes.length === 0) return;
     const copiedNodes = selectedNodes.map(id => {
         const src = getNode(id);
         return src ? JSON.parse(JSON.stringify(src)) : null;
@@ -913,30 +983,28 @@ function copySelected() {
 }
 
 function pasteClipboard() {
-    if (!clipboard || clipboard.nodes.length === 0) {
-        alert('Буфер обмена пуст.');
-        return;
-    }
+    if (!clipboard || clipboard.nodes.length === 0) return;
     saveState();
     const idMap = {};
     const newIds = [];
 
     clipboard.nodes.forEach(src => {
+        const p = src.params || {};
         const newNode = addNode(src.mode, src.x, src.y, src.z, {
-            N: src.params.N,
-            target_len: src.params.target_len,
-            scale: src.params.scale,
-            stretch: src.params.stretch,
-            angles: [...src.params.angles],
-            activeGate: src.params.activeGate,
-            showRight: src.params.showRight,
-            showS: src.params.showS,
-            showLeft: src.params.showLeft,
-            showSLeft: src.params.showSLeft,
-            rightSub: { ...src.params.rightSub },
-            leftSub: { ...src.params.leftSub },
-            sRightSub: { ...src.params.sRightSub },
-            sLeftSub: { ...src.params.sLeftSub }
+            N: p.N,
+            target_len: p.target_len,
+            scale: p.scale,
+            stretch: p.stretch,
+            angles: p.angles ? [...p.angles] : [0,0,0],
+            activeGate: p.activeGate,
+            showRight: p.showRight,
+            showS: p.showS,
+            showLeft: p.showLeft,
+            showSLeft: p.showSLeft,
+            rightSub: p.rightSub ? { ...p.rightSub } : undefined,
+            leftSub: p.leftSub ? { ...p.leftSub } : undefined,
+            sRightSub: p.sRightSub ? { ...p.sRightSub } : undefined,
+            sLeftSub: p.sLeftSub ? { ...p.sLeftSub } : undefined
         });
         idMap[src.id] = newNode.id;
         newIds.push(newNode.id);
@@ -951,14 +1019,10 @@ function pasteClipboard() {
         }
     });
 
-    updateEdges();
-    updateStats();
-    selectedNodes = newIds;
-    selectedPart = null;
-    updateSelectionHighlights();
-    renderProperties(selectedNodes.length === 1 ? selectedNodes[0] : null);
-    logAction('PASTE_CLIPBOARD', { newIds });
-    sendDataToPythonCore(true);
+    updateEdges(); updateStats();
+    selectedNodes = newIds; selectedPart = null;
+    updateSelectionHighlights(); renderProperties(selectedNodes.length === 1 ? selectedNodes[0] : null);
+    logAction('PASTE_CLIPBOARD', { newIds }); sendDataToPythonCore(true);
 }
 
 function applyScaleAndStretchToNodes(nodeIds, newScale, newStretch) {
@@ -971,31 +1035,37 @@ function applyScaleAndStretchToNodes(nodeIds, newScale, newStretch) {
     cx /= targetNodes.length; cy /= targetNodes.length; cz /= targetNodes.length;
 
     const sampleNode = targetNodes[0];
-    const oldScale = sampleNode.params.scale ?? 1.0;
-    const oldStretch = sampleNode.params.stretch ?? 1.0;
+    const oldScale = sampleNode.params?.scale ?? 1.0;
+    const oldStretch = sampleNode.params?.stretch ?? 1.0;
 
     targetNodes.forEach(node => {
-        if (newScale !== undefined && oldScale > 0) {
-            const scaleRatio = newScale / oldScale;
-            node.x = cx + (node.x - cx) * scaleRatio;
-            node.y = cy + (node.y - cy) * scaleRatio;
-            node.z = cz + (node.z - cz) * scaleRatio;
-            node.params.scale = newScale;
-        }
-
-        if (newStretch !== undefined && oldStretch > 0) {
-            const stretchRatio = newStretch / oldStretch;
-            const relativeZ = node.z - cz;
-            node.z = cz + relativeZ * stretchRatio;
-            node.params.stretch = newStretch;
+        if (!node.params) node.params = {};
+        
+        // Если это группа (> 1 объекта), SCALE меняет позиции узлов пропорционально от центра масс, а не ломает каждый объект отдельно
+        if (nodeIds.length > 1) {
+            if (newScale !== undefined && oldScale > 0) {
+                const scaleRatio = newScale / oldScale;
+                node.x = cx + (node.x - cx) * scaleRatio;
+                node.y = cy + (node.y - cy) * scaleRatio;
+                node.z = cz + (node.z - cz) * scaleRatio;
+                node.params.scale = newScale;
+            }
+            if (newStretch !== undefined && oldStretch > 0) {
+                const stretchRatio = newStretch / oldStretch;
+                const relativeZ = node.z - cz;
+                node.z = cz + relativeZ * stretchRatio;
+                node.params.stretch = newStretch;
+            }
+        } else {
+            // Если объект один — штатно меняем его локальные параметры
+            if (newScale !== undefined) node.params.scale = newScale;
+            if (newStretch !== undefined) node.params.stretch = newStretch;
         }
 
         updateNodeVisual(node);
     });
 
-    updateEdges();
-    logAction('SCALE_STRETCH', { nodeIds, newScale, newStretch });
-    sendDataPythonCoreThrottled();
+    updateEdges(); logAction('SCALE_STRETCH', { nodeIds, newScale, newStretch }); sendDataPythonCoreThrottled();
 }
 
 // ============================================================
@@ -1040,81 +1110,81 @@ class UIManager {
             });
         }
 
-        if (centerBtn) {
-            centerBtn.addEventListener('click', () => { centerSelectedToOrigin(); });
-        }
-
-        if (snapBtn) {
-            snapBtn.addEventListener('click', () => { snapSelectedObjects(3.0); });
-        }
+        if (centerBtn) centerBtn.addEventListener('click', () => { centerSelectedToOrigin(); });
+        if (snapBtn) snapBtn.addEventListener('click', () => { snapSelectedObjects(3.0); });
     }
 
     setupQuantumGates() {
-        // 1. Маршрутизатор (SWAP / Коммутация потоков)
         document.getElementById('gateRouter')?.addEventListener('click', () => {
-            if (selectedNodes.length === 0) { alert('Выберите сфираль'); return; }
+            if (selectedNodes.length === 0) return;
             saveState();
             selectedNodes.forEach(id => {
                 const node = getNode(id);
                 if (node) {
+                    if (!node.params) node.params = {};
                     node.params.activeGate = 'ROUTER_SWAP';
                     const temp = node.params.showRight;
                     node.params.showRight = node.params.showLeft;
                     node.params.showLeft = temp;
                     updateNodeVisual(node);
-                    logAction('APPLY_GATE', { id: node.id, gate: 'ROUTER_SWAP' });
                 }
             });
             updateEdges(); updateStats(); sendDataToPythonCore(true);
         });
 
-        // 2. Датчик считывания данных (Readout)
         document.getElementById('gateReadout')?.addEventListener('click', () => {
-            if (selectedNodes.length === 0) { alert('Выберите сфираль'); return; }
+            if (selectedNodes.length === 0) return;
             saveState();
             selectedNodes.forEach(id => {
                 const node = getNode(id);
-                if (node) {
-                    node.params.activeGate = 'READOUT';
-                    node.quantumState.intensity = 1.0;
-                    updateNodeVisual(node);
-                    logAction('APPLY_GATE', { id: node.id, gate: 'READOUT' });
+                if (node) { 
+                    if (!node.params) node.params = {};
+                    node.params.activeGate = 'READOUT'; 
+                    node.quantumState.intensity = 1.0; 
+                    updateNodeVisual(node); 
                 }
             });
             updateEdges(); updateStats(); sendDataToPythonCore(true);
         });
 
-        // 3. Корректор масштаба (Scale & Stretch Control -> переключен на пружину по оси Z)
-        document.getElementById('gateScaleControl')?.addEventListener('click', () => {
-            if (selectedNodes.length === 0) { alert('Выберите сфираль'); return; }
+        // SCALE_CORRECTOR: для одной сфирали меняет stretch локально, для группы — пропорционально от центра
+        document.getElementById('gateScaleControl')?.addEventListener('click', (e) => {
+            if (selectedNodes.length === 0) return;
             saveState();
-            selectedNodes.forEach(id => {
-                const node = getNode(id);
+            
+            const step = e.shiftKey ? -0.2 : 0.2;
+
+            if (selectedNodes.length === 1) {
+                const node = getNode(selectedNodes[0]);
                 if (node) {
+                    if (!node.params) node.params = {};
                     node.params.activeGate = 'SCALE_CORRECTOR';
                     const currentStretch = node.params.stretch !== undefined ? node.params.stretch : 1.0;
-                    node.params.stretch = Math.min(5.0, Number((currentStretch + 0.2).toFixed(1)));
+                    node.params.stretch = Math.max(0.1, Math.min(5.0, Number((currentStretch + step).toFixed(1))));
                     updateNodeVisual(node);
-                    logAction('APPLY_GATE', { id: node.id, gate: 'SCALE_CORRECTOR', stretch: node.params.stretch });
                 }
-            });
+            } else {
+                // Групповое изменение относительно общего центра масс
+                const sampleNode = getNode(selectedNodes[0]);
+                const currentStretch = sampleNode?.params?.stretch !== undefined ? sampleNode.params.stretch : 1.0;
+                const newStretch = Math.max(0.1, Math.min(5.0, Number((currentStretch + step).toFixed(1))));
+                applyScaleAndStretchToNodes(selectedNodes, undefined, newStretch);
+            }
+
             updateEdges(); updateStats(); sendDataToPythonCore(true);
         });
 
-        // 4. Инициализатор (Reset / Старт)
         document.getElementById('gateReset')?.addEventListener('click', () => {
-            if (selectedNodes.length === 0) { alert('Выберите сфираль'); return; }
+            if (selectedNodes.length === 0) return;
             saveState();
             selectedNodes.forEach(id => {
                 const node = getNode(id);
                 if (node) {
+                    if (!node.params) node.params = {};
                     node.params.activeGate = 'RESET';
-                    node.params.showRight = true;
-                    node.params.showLeft = true;
-                    node.params.stretch = 1.0;
-                    node.quantumState.intensity = 0;
+                    node.params.showRight = true; node.params.showLeft = true;
+                    node.params.stretch = 1.0; node.quantumState.intensity = 0;
                     updateNodeVisual(node);
-                    logAction('APPLY_GATE', { id: node.id, gate: 'RESET' });
                 }
             });
             updateEdges(); updateStats(); sendDataToPythonCore(true);
@@ -1130,33 +1200,63 @@ class UIManager {
         if (mode === 'rotate' && rotBtn) rotBtn.classList.add('active');
     }
 
+    toggleWiringMode() {
+        isWiringMode = !isWiringMode;
+        const btn = document.getElementById('connectBtn');
+        const consoleEl = document.getElementById('console');
+        if (isWiringMode) {
+            btn.style.background = '#00ffaa';
+            btn.style.color = '#000';
+            btn.innerText = '🔌 Трассировка';
+            selectedNodes = [];
+            transformControls.detach();
+            updateSelectionHighlights();
+            if (consoleEl) {
+                consoleEl.style.display = 'block';
+                consoleEl.innerHTML += `<div class="line" style="color:#00ffaa">🔌 [ТРАССИРОВКА ВКЛЮЧЕНА] Кликните на Красный ВЫХОД, затем на Зеленый ВХОД.</div>`;
+            }
+        } else {
+            btn.style.background = '';
+            btn.style.color = '';
+            btn.innerText = '🔗';
+            wiringSource = null;
+            if (consoleEl) {
+                consoleEl.innerHTML += `<div class="line" style="color:#ffaa00">🔌 [ТРАССИРОВКА ОТКЛЮЧЕНА]</div>`;
+            }
+        }
+        updateWiringPorts();
+        if (consoleEl) consoleEl.scrollTop = consoleEl.scrollHeight;
+    }
+
     setupEventListeners() {
-        document.getElementById('closeMoveModalX')?.addEventListener('click', () => {
-            document.getElementById('moveDialogModal').style.display = 'none';
-        });
-        document.getElementById('closeRotModalX')?.addEventListener('click', () => {
-            document.getElementById('rotateDialogModal').style.display = 'none';
-        });
+        document.getElementById('closeMoveModalX')?.addEventListener('click', () => { document.getElementById('moveDialogModal').style.display = 'none'; });
+        document.getElementById('closeRotModalX')?.addEventListener('click', () => { document.getElementById('rotateDialogModal').style.display = 'none'; });
 
         ['modalPosX', 'modalPosY', 'modalPosZ'].forEach(id => {
             const el = document.getElementById(id);
-            if (el) {
-                el.addEventListener('input', () => { applyModalPositionLive(); autoConnectStuckNodes(); });
-                el.addEventListener('change', () => { saveState(); sendDataToPythonCore(true); });
-            }
+            if (el) { el.addEventListener('input', () => { applyModalPositionLive(); autoConnectStuckNodes(); }); el.addEventListener('change', () => { saveState(); sendDataToPythonCore(true); }); }
         });
 
         ['modalRotX', 'modalRotY', 'modalRotZ'].forEach(id => {
             const el = document.getElementById(id);
-            if (el) {
-                el.addEventListener('input', () => { applyModalRotationLive(); autoConnectStuckNodes(); });
-                el.addEventListener('change', () => { saveState(); sendDataToPythonCore(true); });
-            }
+            if (el) { el.addEventListener('input', () => { applyModalRotationLive(); autoConnectStuckNodes(); }); el.addEventListener('change', () => { saveState(); sendDataToPythonCore(true); }); }
         });
 
         document.getElementById('addNodeBtn')?.addEventListener('click', addNodeHandler);
         document.getElementById('deleteBtn')?.addEventListener('click', deleteSelected);
-        document.getElementById('connectBtn')?.addEventListener('click', connectSelected);
+        
+        document.getElementById('connectBtn')?.addEventListener('click', (e) => {
+            if (document.getElementById('tutorialModal').style.display !== 'none') {
+                if (selectedNodes.length === 2) {
+                    saveState();
+                    addEdge(selectedNodes[0], selectedNodes[1], 1.0, 'right_polarization');
+                    updateEdges(); updateStats(); sendDataToPythonCore(true);
+                }
+                return;
+            }
+            this.toggleWiringMode();
+        });
+
         document.getElementById('copyGroupBtn')?.addEventListener('click', copySelected);
         document.getElementById('saveModelBtn')?.addEventListener('click', saveModel);
         document.getElementById('loadModelBtn')?.addEventListener('click', () => document.getElementById('fileInput').click());
@@ -1175,43 +1275,6 @@ class UIManager {
         let touchTimer = null;
         let isLongPress = false;
 
-        renderer.domElement.addEventListener('touchstart', (e) => {
-            if (e.touches.length === 1) {
-                const touch = e.touches[0];
-                touchDownPos.x = touch.clientX;
-                touchDownPos.y = touch.clientY;
-                isLongPress = false;
-                
-                const hitData = getObjectUnderMouse(touch.clientX, touch.clientY);
-                if (hitData) {
-                    touchTimer = setTimeout(() => {
-                        isLongPress = true;
-                        selectedNodes = [hitData.nodeId];
-                        selectedPart = hitData.part;
-                        updateSelectionHighlights();
-                        renderProperties(hitData.nodeId);
-                        openRotateDialog();
-                    }, 650);
-                }
-            }
-        }, { passive: true });
-
-        renderer.domElement.addEventListener('touchmove', (e) => {
-            if (e.touches.length === 1) {
-                const touch = e.touches[0];
-                const dx = touch.clientX - touchDownPos.x;
-                const dy = touch.clientY - touchDownPos.y;
-                if (Math.sqrt(dx * dx + dy * dy) > 10 && touchTimer) {
-                    clearTimeout(touchTimer);
-                    touchTimer = null;
-                }
-            }
-        }, { passive: true });
-
-        renderer.domElement.addEventListener('touchend', (e) => {
-            if (touchTimer) { clearTimeout(touchTimer); touchTimer = null; }
-        }, { passive: true });
-
         const selectionRect = document.getElementById('selectionRect');
         let mouseDownPos = { x: 0, y: 0 };
         let mouseDownObjectId = null;
@@ -1220,6 +1283,44 @@ class UIManager {
         let boxStart = { x: 0, y: 0 };
 
         renderer.domElement.addEventListener('pointerdown', (e) => {
+            if (isWiringMode && e.button === 0) {
+                const rect = container.getBoundingClientRect();
+                const mouse = new THREE.Vector2();
+                mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+                mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+                const raycaster = new THREE.Raycaster();
+                raycaster.setFromCamera(mouse, camera);
+
+                const intersects = raycaster.intersectObjects(interactivePorts.map(p => p.mesh));
+                if (intersects.length > 0) {
+                    const hitMesh = intersects[0].object;
+                    const hit = interactivePorts.find(p => p.mesh === hitMesh);
+                    const consoleEl = document.getElementById('console');
+                    
+                    if (hit.type === 'exit') {
+                        wiringSource = hit;
+                        interactivePorts.forEach(p => { if (p.type === 'exit') p.mesh.material.color.setHex(0xff0044); });
+                        hitMesh.material.color.setHex(0xffffff); 
+                        if (consoleEl) {
+                            consoleEl.innerHTML += `<div class="line">🔌 [Трассировка]: Выбран выход сфирали ID:${hit.nodeId}. Укажите зеленый вход.</div>`;
+                            consoleEl.scrollTop = consoleEl.scrollHeight;
+                        }
+                    } else if (hit.type === 'entry' && wiringSource) {
+                        saveState();
+                        addEdge(wiringSource.nodeId, hit.nodeId, 1.0, 'manual_wire');
+                        wiringSource = null;
+                        updateEdges();
+                        updateWiringPorts();
+                        sendDataToPythonCore(true);
+                        if (consoleEl) {
+                            consoleEl.innerHTML += `<div class="line success">🔗 [Трассировка]: Спаяно! Связь установлена.</div>`;
+                            consoleEl.scrollTop = consoleEl.scrollHeight;
+                        }
+                    }
+                }
+                return; 
+            }
+
             if (e.button === 2) {
                 e.preventDefault();
                 const hitData = getObjectUnderMouse(e.clientX, e.clientY);
@@ -1272,6 +1373,8 @@ class UIManager {
         });
 
         renderer.domElement.addEventListener('pointerup', (e) => {
+            if (isWiringMode) return; 
+
             if ((e.button !== 0 && e.button !== 2) || isLongPress) return;
             const dx = e.clientX - mouseDownPos.x;
             const dy = e.clientY - mouseDownPos.y;
@@ -1354,8 +1457,8 @@ class UIManager {
             if (selectedNodes.length > 0) {
                 let sampleNode = getNode(selectedNodes[0]);
                 if (sampleNode) {
-                    let targetScale = sampleNode.params.scale ?? 1.0;
-                    let targetStretch = sampleNode.params.stretch ?? 1.0;
+                    let targetScale = sampleNode.params?.scale ?? 1.0;
+                    let targetStretch = sampleNode.params?.stretch ?? 1.0;
                     let changed = false;
 
                     if (key === '=' || key === '+') { targetScale = Math.min(10.0, targetScale + 0.1); changed = true; }
@@ -1367,8 +1470,8 @@ class UIManager {
                         e.preventDefault();
                         applyScaleAndStretchToNodes(
                             selectedNodes,
-                            targetScale !== sampleNode.params.scale ? targetScale : undefined,
-                            targetStretch !== sampleNode.params.stretch ? targetStretch : undefined
+                            targetScale !== (sampleNode.params?.scale ?? 1.0) ? targetScale : undefined,
+                            targetStretch !== (sampleNode.params?.stretch ?? 1.0) ? targetStretch : undefined
                         );
                         renderProperties(selectedNodes.length === 1 ? selectedNodes[0] : null);
                         return;
@@ -1380,6 +1483,7 @@ class UIManager {
             else if (e.ctrlKey && key === 'v') { e.preventDefault(); pasteClipboard(); }
             else if (e.key === 'Delete' || e.key === 'Del') { e.preventDefault(); deleteSelected(); }
             else if (e.key === 'Escape') {
+                if(isWiringMode) this.toggleWiringMode(); 
                 selectedNodes = []; selectedPart = null;
                 transformControls.detach(); updateSelectionHighlights(); renderProperties(null);
             }
@@ -1443,6 +1547,8 @@ function applyModalRotationLive() {
         const node = getNode(selectedNodes[0]);
         const group = meshMap.get(selectedNodes[0]);
         if (!node || !group) return;
+        if (!node.params) node.params = {};
+        if (!node.params.angles) node.params.angles = [0,0,0];
         if (!isNaN(rx)) node.params.angles[0] = rx;
         if (!isNaN(ry)) node.params.angles[1] = ry;
         if (!isNaN(rz)) node.params.angles[2] = rz;
@@ -1459,7 +1565,7 @@ function applyModalRotationLive() {
         cx /= targetNodes.length; cy /= targetNodes.length; cz /= targetNodes.length;
 
         const firstNode = targetNodes[0];
-        const curRot = firstNode.params.angles || [0, 0, 0];
+        const curRot = firstNode.params?.angles || [0, 0, 0];
         const targetRx = !isNaN(rx) ? rx : curRot[0];
         const targetRy = !isNaN(ry) ? ry : curRot[1];
         const targetZ = !isNaN(rz) ? rz : curRot[2];
@@ -1480,6 +1586,7 @@ function applyModalRotationLive() {
             node.x = v.x; node.y = v.y; node.z = v.z;
 
             group.rotation.setFromQuaternion(group.quaternion.premultiply(quatDelta));
+            if (!node.params) node.params = {};
             node.params.angles = [
                 THREE.MathUtils.radToDeg(group.rotation.x),
                 THREE.MathUtils.radToDeg(group.rotation.y),
@@ -1509,7 +1616,7 @@ function openRotateDialog() {
     document.getElementById('moveDialogModal').style.display = 'none';
     if (selectedNodes.length > 0) {
         const node = getNode(selectedNodes[0]);
-        if (node) {
+        if (node && node.params && node.params.angles) {
             document.getElementById('modalRotX').value = node.params.angles[0];
             document.getElementById('modalRotY').value = node.params.angles[1];
             document.getElementById('modalRotZ').value = node.params.angles[2];
@@ -1526,7 +1633,7 @@ function addNodeHandler() {
         nextX = lastNode.x - 140; nextZ = lastNode.z - 180;
     }
     const node = addNode('Single', nextX, 0, nextZ, { N: 5, target_len: 1000, scale: 1.0, stretch: 1.0, angles: [0, 0, 0], activeGate: 'ROUTER_SWAP' });
-    updateNodeVisual(node); updateEdges(); updateStats();
+    updateNodeVisual(node); updateEdges(); updateStats(); updateWiringPorts();
     selectedNodes = [node.id]; selectedPart = null;
     updateSelectionHighlights(); renderProperties(node.id); sendDataToPythonCore(true);
 }
@@ -1538,6 +1645,7 @@ function deleteSelected() {
     if (selectedPart && selectedNodes.length === 1) {
         const node = getNode(selectedNodes[0]);
         if (node) {
+            if (!node.params) node.params = {};
             if (selectedPart === 'right') node.params.showRight = false;
             else if (selectedPart === 's' || selectedPart === 'sRight') node.params.showS = false;
             else if (selectedPart === 'left') node.params.showLeft = false;
@@ -1556,19 +1664,8 @@ function deleteSelected() {
         if (meshMap.has(id)) { objectsGroup.remove(meshMap.get(id)); meshMap.delete(id); }
     });
     selectedNodes = []; selectedPart = null; transformControls.detach();
-    updateEdges(); updateStats(); renderProperties(null);
+    updateEdges(); updateStats(); updateWiringPorts(); renderProperties(null);
     updateSelectionHighlights(); sendDataToPythonCore(true);
-}
-
-function connectSelected() {
-    if (selectedNodes.length === 2) {
-        saveState();
-        const edge = addEdge(selectedNodes[0], selectedNodes[1], 1.0, 'right_polarization');
-        if (edge) { updateEdges(); updateStats(); sendDataToPythonCore(true); }
-        else { alert('Связь уже существует'); }
-    } else {
-        alert('Выделите ровно две сфирали');
-    }
 }
 
 function buildFractalComposition() {
@@ -1609,22 +1706,80 @@ function loadModel(e) {
     reader.onload = function(event) {
         try {
             const loadedData = JSON.parse(event.target.result);
-            if (loadedData && (Array.isArray(loadedData.nodes) || loadedData.graph)) {
+            
+            let nodesArray = [];
+            let edgesArray = [];
+            let timelineArray = [];
+
+            if (Array.isArray(loadedData)) {
+                nodesArray = loadedData.map((item, idx) => ({
+                    id: item.id || (idx + 1),
+                    mode: item.mode || 'Single',
+                    x: item.x || 0,
+                    y: item.y || 0,
+                    z: item.z || 0,
+                    params: {
+                        N: 5,
+                        target_len: 1000,
+                        scale: item.scale || 1.0,
+                        stretch: item.stretch || 1.0,
+                        angles: item.angles || [0, 0, 0],
+                        activeGate: 'ROUTER_SWAP',
+                        showRight: true, showS: true, showLeft: true, showSLeft: true,
+                        rightSub: { height: 100 }, leftSub: { height: 100 },
+                        sRightSub: { height: 100 }, sLeftSub: { height: 100 }
+                    },
+                    quantumState: { intensity: 0, psi_real: 0, psi_imag: 0 }
+                }));
+            } else if (loadedData.graph && Array.isArray(loadedData.graph.nodes)) {
+                nodesArray = loadedData.graph.nodes;
+                edgesArray = loadedData.graph.edges || [];
+                timelineArray = loadedData.design_timeline || [];
+            } else if (Array.isArray(loadedData.nodes)) {
+                nodesArray = loadedData.nodes;
+                edgesArray = loadedData.edges || [];
+                timelineArray = loadedData.design_timeline || [];
+            }
+
+            if (nodesArray.length > 0) {
                 saveState();
-                const targetGraph = loadedData.graph || loadedData;
-                graph.nodes = targetGraph.nodes || [];
-                graph.edges = Array.isArray(targetGraph.edges) ? targetGraph.edges : [];
-                if (loadedData.design_timeline) {
-                    designTimeline = loadedData.design_timeline;
+                graph.nodes = nodesArray.map(n => ({
+                    ...n,
+                    params: {
+                        N: n.params?.N || 5,
+                        target_len: n.params?.target_len || 1000,
+                        scale: n.params?.scale ?? 1.0,
+                        stretch: n.params?.stretch ?? 1.0,
+                        angles: n.params?.angles ? [...n.params.angles] : [0, 0, 0],
+                        activeGate: n.params?.activeGate || 'ROUTER_SWAP',
+                        showRight: n.params?.showRight !== undefined ? n.params.showRight : true,
+                        showS: n.params?.showS !== undefined ? n.params.showS : true,
+                        showLeft: n.params?.showLeft !== undefined ? n.params.showLeft : true,
+                        showSLeft: n.params?.showSLeft !== undefined ? n.params.showSLeft : true,
+                        rightSub: n.params?.rightSub ? { ...n.params.rightSub } : { height: 100 },
+                        leftSub: n.params?.leftSub ? { ...n.params.leftSub } : { height: 100 },
+                        sRightSub: n.params?.sRightSub ? { ...n.params.sRightSub } : { height: 100 },
+                        sLeftSub: n.params?.sLeftSub ? { ...n.params.sLeftSub } : { height: 100 }
+                    }
+                }));
+                graph.edges = edgesArray;
+                if (timelineArray.length > 0) {
+                    designTimeline = timelineArray;
                 }
+
                 let maxId = 0;
                 graph.nodes.forEach(n => { if (n.id > maxId) maxId = n.id; });
                 nextId = maxId + 1;
-                updateAllNodes(); selectedNodes = []; selectedPart = null;
-                transformControls.detach(); renderProperties(null); sendDataToPythonCore(true);
-                alert('📦 Модель и история сборки успешно загружены!');
+
+                updateAllNodes(); 
+                selectedNodes = []; 
+                selectedPart = null;
+                transformControls.detach(); 
+                renderProperties(null); 
+                sendDataToPythonCore(true);
+                alert('📦 Модель успешно загружена!');
             } else {
-                alert('⚠️ Ошибка: Неверный формат файла модели.');
+                alert('⚠️ Ошибка: В файле не найдено валидных узлов Сфирали.');
             }
         } catch (err) {
             console.error(err);
@@ -1646,8 +1801,8 @@ function renderProperties(id) {
     if (selectedNodes.length > 1) {
         if (selectedPart) selectedPart = null;
         const sampleNode = getNode(selectedNodes[0]);
-        const currentGroupScale = sampleNode ? (sampleNode.params.scale ?? 1.0) : 1.0;
-        const currentGroupStretch = sampleNode ? (sampleNode.params.stretch ?? 1.0) : 1.0;
+        const currentGroupScale = sampleNode?.params?.scale ?? 1.0;
+        const currentGroupStretch = sampleNode?.params?.stretch ?? 1.0;
 
         container.innerHTML = `
             <div class="prop-group highlight">📦 Группа: <b>${selectedNodes.length} шт.</b></div>
@@ -1669,6 +1824,7 @@ function renderProperties(id) {
 
     const node = getNode(id);
     if (!node) { container.innerHTML = '<div class="empty">Выберите сфираль или элемент</div>'; return; }
+    if (!node.params) node.params = {};
     const p = node.params;
 
     if (selectedPart) {
