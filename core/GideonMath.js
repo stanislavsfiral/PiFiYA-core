@@ -1,19 +1,18 @@
-export function generateSphiralTopology(R = 140, H = 190) {
-    let junctionZ = H / 5.0; // Зона плавной деформации
-    let r_s = R / 2.0;
+export function generateSphiralTopology(R = 140, H = 190, scale = 1.0, stretch = 1.0) {
+    let junctionZ = (H / 5.0) * scale;
+    let r_s = (R / 2.0) * scale;
+    let scaledH = H * scale * stretch;
+    let scaledR = R * scale;
 
-    // 1. Левый основной виток (вытягивается в положительном направлении по высоте: +H)
     let leftMainX = [], leftMainY = [], leftMainZ = [];
     for (let i = 0; i <= 100; i++) {
         let t = i / 100.0;
         let angle = 2 * Math.PI * t;
-        leftMainX.push(R * Math.cos(angle));
-        leftMainY.push(R * Math.sin(angle));
-        // ИСПРАВЛЕНО: Конечная координата витка идеально сходится с началом S-петли
-        leftMainZ.push(junctionZ + (H - junctionZ) * (1 - t)); 
+        leftMainX.push(scaledR * Math.cos(angle));
+        leftMainY.push(scaledR * Math.sin(angle));
+        leftMainZ.push(junctionZ + (scaledH - junctionZ) * (1 - t)); 
     }
 
-    // 2. Левый малый полувиток масштаба 0.5 (часть S-петли)
     let leftHalfX = [], leftHalfY = [], leftHalfZ = [];
     for (let i = 0; i <= 60; i++) {
         let t = i / 60.0;
@@ -23,7 +22,6 @@ export function generateSphiralTopology(R = 140, H = 190) {
         leftHalfZ.push(junctionZ * (1 - t));
     }
 
-    // 3. Правый малый полувиток масштаба 0.5 (антипод с поворотом на 180° по оси X)
     let rightHalfX = [], rightHalfY = [], rightHalfZ = [];
     for (let i = 0; i <= 60; i++) {
         let t = i / 60.0;
@@ -33,15 +31,13 @@ export function generateSphiralTopology(R = 140, H = 190) {
         rightHalfZ.push(-junctionZ * (1 - t));
     }
 
-    // 4. Правый основной виток (зеркальный антипод, вытягивается в противоположном направлении: -H)
     let rightMainX = [], rightMainY = [], rightMainZ = [];
     for (let i = 0; i <= 100; i++) {
         let t = i / 100.0;
         let angle = 2 * Math.PI * t;
-        rightMainX.push(-R * Math.cos(angle));
-        rightMainY.push(-R * Math.sin(angle));
-        // ИСПРАВЛЕНО: Сшивка с антисимметричным полувитком
-        rightMainZ.push(-junctionZ - (H - junctionZ) * (1 - t)); 
+        rightMainX.push(-scaledR * Math.cos(angle));
+        rightMainY.push(-scaledR * Math.sin(angle));
+        rightMainZ.push(-junctionZ - (scaledH - junctionZ) * (1 - t)); 
     }
 
     return {
@@ -50,14 +46,73 @@ export function generateSphiralTopology(R = 140, H = 190) {
     };
 }
 
-// Обратная совместимость для старых вызовов точек
-export function generateHalfPoints(R = 140, H = 190) {
-    let topo = generateSphiralTopology(R, H);
+// === ИСПРАВЛЕННЫЙ БЛОК ===
+export function generateHalfPoints(R = 140, H = 190, scale = 1.0, stretch = 1.0) {
+    let topo = generateSphiralTopology(R, H, scale, stretch);
     return {
         x: topo.left.main.x.concat(topo.left.half.x),
         y: topo.left.main.y.concat(topo.left.half.y),
         z: topo.left.main.z.concat(topo.left.half.z)
     };
+}
+// =========================
+
+// ========================================================
+// ТОПОЛОГИЧЕСКИЙ ШИФР ОТТЕНДОРФА: РЕКУРСИВНО-ФРАКТАЛЬНАЯ АДРЕСАЦИЯ
+// ========================================================
+export class OttendorfFractalAddressing {
+    constructor(baseScale = 140.0) {
+        this.baseScale = baseScale;
+    }
+
+    /**
+     * Генерация многоуровневого фрактального шифра для сфирали вложенной глубины
+     * @param {string} nodeId - Базовый ID узла
+     * @param {number} x - Координата X
+     * @param {number} y - Координата Y
+     * @param {number} z - Координата Z
+     * @param {number} depth - Уровень вложенности (глубина фрактала, по умолчанию 1)
+     * @param {string} parentPath - Родительский путь адресации (для рекурсии)
+     */
+    encodeRecursiveAddress(nodeId, x, y, z, depth = 1, parentPath = '') {
+        const macroSector = Math.abs(x) >= Math.abs(y) ? (x > 0 ? 'R' : 'L') : 'S';
+        
+        let currentSegments = [];
+        let currentScale = this.baseScale;
+
+        // Вычисляем фрактальные суффиксы для каждого уровня вложенности (масштаб 0.5 на уровень)
+        let cx = x, cy = y, cz = z;
+        for (let d = 1; d <= depth; d++) {
+            currentScale *= 0.5;
+            let fx = Math.floor((cx / currentScale) + 2) % 2;
+            let fy = Math.floor((cy / currentScale) + 2) % 2;
+            let fz = Math.floor((cz / currentScale) + 2) % 2;
+            currentSegments.push(`${fx}${fy}${fz}`);
+            
+            // Смещение для следующего подуровня вложенности
+            cx = (cx % currentScale);
+            cy = (cy % currentScale);
+            cz = (cz % currentScale);
+        }
+
+        const subcode = currentSegments.join('.');
+        const addressCode = parentPath ? `${parentPath}>SF-${macroSector}-${subcode}` : `SF-${macroSector}-${subcode}`;
+
+        return {
+            id: nodeId,
+            address: addressCode,
+            depth: depth,
+            scale: currentScale,
+            segments: currentSegments
+        };
+    }
+
+    /**
+     * Мгновенный поиск узла по фрактальному шифру Оттендорфа в дереве/массиве моделей (O(K) вместо O(N))
+     */
+    static findNodeByAddress(nodesArray, targetAddress) {
+        return nodesArray.find(node => node.ottendorfAddress === targetAddress || (node.address && node.address === targetAddress));
+    }
 }
 
 export class GideonWebCore {
@@ -69,7 +124,6 @@ export class GideonWebCore {
         return packet.map(p => p * (modeFlag ? -1 : 1));
     }
 
-    // Оператор S-перехода с учетом ламинарной инверсии и поворота на 180° по оси X
     sTransitionOperator(s1, s2, mode) {
         let sum = s1 + s2;
         if (mode === 'Axis X') {
@@ -83,7 +137,6 @@ export class GideonWebCore {
         } else {
             if (sum === 0 && s1 !== 0) return [-s1, -s2];
             let factor = Math.abs(sum) > 0 ? 2.0 : 1.0;
-            // Учет пространственной инверсии второго потока (-s2)
             return [
                 Math.round(Math.max(-1, Math.min(1, s1 * factor))), 
                 Math.round(Math.max(-1, Math.min(1, -s2 * factor)))
@@ -92,10 +145,7 @@ export class GideonWebCore {
     }
 
     routeChiralStream(streamA, streamB, chiralitySign, mode) {
-        if (mode === 'Axis Y') {
-            return [streamA, streamB];
-        }
-        // Строгая зеркальная антисимметрия хиральностей витков-антиподов
+        if (mode === 'Axis Y') return [streamA, streamB];
         let routedA = streamA.map(a => a * chiralitySign);
         let routedB = streamB.map(b => b * (-chiralitySign)); 
         return [routedA, routedB];
@@ -148,9 +198,6 @@ export class GideonWebCore {
     }
 }
 
-// ==========================================
-// АВТОНОМНОЕ КВАНТОВОЕ ЯДРО (JS)
-// ==========================================
 class Complex {
     constructor(re = 0, im = 0) { this.re = re; this.im = im; }
     add(c) { return new Complex(this.re + c.re, this.im + c.im); }

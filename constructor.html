@@ -6,9 +6,10 @@
     <title>GIDEON — Конструктор Сфиралей</title>
     <link rel="stylesheet" href="styles.css">
     <style>
+        /* Стили для новых мобильных элементов управления на холсте */
         #boxSelectToggleBtn {
             position: absolute;
-            top: 105px;
+            top: 60px;
             left: 10px;
             z-index: 50;
             background: rgba(16, 23, 38, 0.9);
@@ -28,6 +29,7 @@
             border-color: #00e5ff;
             box-shadow: 0 0 10px rgba(0,229,255,0.5);
         }
+        /* Безопасное положение кнопки справки, чтобы не налезать на верхнюю панель */
         .help-trigger-btn {
             position: absolute;
             top: 60px;
@@ -45,80 +47,6 @@
             align-items: center;
             justify-content: center;
         }
-        @keyframes pulseArrow {
-            0% { transform: translateY(0); opacity: 0.6; }
-            50% { transform: translateY(6px); opacity: 1; }
-            100% { transform: translateY(0); opacity: 0.6; }
-        }
-        .tutorial-arrow {
-            display: inline-block;
-            animation: pulseArrow 1s infinite ease-in-out;
-            color: #00ffaa;
-            font-weight: bold;
-            font-size: 1rem;
-            margin-right: 4px;
-        }
-        @keyframes superNeonPulse {
-            0% { 
-                box-shadow: 0 0 15px 5px rgba(0, 229, 255, 0.9), inset 0 0 10px rgba(0, 229, 255, 0.7); 
-                border-color: #00e5ff; 
-                transform: scale(1.05);
-            }
-            50% { 
-                box-shadow: 0 0 30px 12px rgba(255, 0, 255, 0.95), inset 0 0 15px rgba(255, 0, 255, 0.9); 
-                border-color: #ff00ff; 
-                transform: scale(1.12);
-            }
-            100% { 
-                box-shadow: 0 0 15px 5px rgba(0, 229, 255, 0.9), inset 0 0 10px rgba(0, 229, 255, 0.7); 
-                border-color: #00e5ff; 
-                transform: scale(1.05);
-            }
-        }
-        .tutorial-highlight {
-            animation: superNeonPulse 0.9s infinite ease-in-out !important;
-            border: 3px solid #00e5ff !important;
-            z-index: 100 !important;
-            position: relative;
-        }
-
-        #tutorialModal {
-            position: fixed;
-            z-index: 10000;
-            background: rgba(19, 27, 46, 0.98);
-            border: 2px solid #00e5ff;
-            border-radius: 14px;
-            box-shadow: 0 15px 40px rgba(0, 229, 255, 0.4);
-            backdrop-filter: blur(10px);
-            transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
-            display: none;
-        }
-        #tutorialModal.mode-center {
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 440px;
-            padding: 24px 28px;
-        }
-        #tutorialModal.mode-center h3 { font-size: 1.1rem; margin-bottom: 8px; color: #00e5ff; }
-        #tutorialModal.mode-center p { font-size: 0.9rem; line-height: 1.4; margin-bottom: 16px; color: #e0f0ff; }
-        
-        #tutorialModal.mode-corner {
-            bottom: 95px;
-            left: 15px;
-            top: auto;
-            transform: none;
-            width: 300px;
-            padding: 12px 16px;
-        }
-        #tutorialModal.mode-corner h3 { font-size: 0.8rem; margin-bottom: 4px; color: #00e5ff; }
-        #tutorialModal.mode-corner p { font-size: 0.7rem; line-height: 1.3; margin-bottom: 10px; color: #c0d0e0; }
-
-        /* Специфичные стили для новых названий вентилей */
-        .gate-swap { background-color: #3b82f6; color: #fff; width: auto !important; padding: 0 6px !important; }
-        .gate-read { background-color: #eab308; color: #000; width: auto !important; padding: 0 6px !important; }
-        .gate-scale { background-color: #ef4444; color: #fff; width: auto !important; padding: 0 6px !important; }
-        .gate-reset { background-color: #10b981; color: #fff; width: auto !important; padding: 0 6px !important; }
     </style>
     <script type="importmap">
         {
@@ -134,6 +62,7 @@
     <div id="canvasContainer">
         <canvas id="renderCanvas"></canvas>
 
+        <!-- ====== ПЛАВАЮЩАЯ ВЕРХНЯЯ ПАНЕЛЬ ====== -->
         <div id="toolbar">
             <a href="index.html" class="back-btn" style="text-decoration:none;">◀</a>
             <button id="addNodeBtn" title="Добавить сфираль">➕</button>
@@ -141,8 +70,11 @@
             <button id="connectBtn" title="Соединить">🔗</button>
             <button id="deleteBtn" title="Удалить">🗑️</button>
             
+            <!-- КНОПКИ ОТМЕНЫ И ВОЗВРАТА -->
+            <button id="toolUndoBtn" class="tool-btn" title="Отменить действие (Ctrl+Z)">↩️</button>
+            <button id="toolRedoBtn" class="tool-btn" title="Вернуть действие (Ctrl+Y)">↪️</button>
+            
             <button id="toolCenterBtn" title="Перенести в центр (0,0,0)" style="font-size:0.8rem;">🎯</button>
-            <!-- Кнопка автоматического выравнивания (снаппинга) с допуском -->
             <button id="snapObjectsBtn" title="Выровнять выделенные объекты по сетке и углам" style="font-size:0.8rem; background:#10b981; color:#fff;">🧲</button>
             
             <div class="dropdown" style="display:inline-block; position:relative;">
@@ -168,8 +100,10 @@
             <button id="toolRotateBtn" class="tool-btn" style="font-size:0.6rem;">↻</button>
         </div>
 
+        <!-- Кнопка включения рамки выделения -->
         <button id="boxSelectToggleBtn" title="Включить/выключить режим рамки выделения">🔲 Рамка: ВЫКЛ</button>
 
+        <!-- ====== ПАНЕЛЬ КВАНТОВЫХ ВЕНТИЛЕЙ ====== -->
         <div id="quantumGatesPanel" class="ibm-gates-toolbar" style="position:absolute; top:105px; right:12px; z-index:25;">
             <span style="color: var(--text-dim); font-size: 0.65rem; margin-right: 2px;">Вентили:</span>
             <button class="ibm-gate-btn gate-swap" id="gateRouter" title="Маршрутизатор (SWAP / Коммутация потоков)">SWAP</button>
@@ -202,6 +136,7 @@
             </div>
         </div>
 
+        <!-- ====== МОДАЛЬНЫЕ ОКНА ====== -->
         <div id="moveDialogModal" class="modal" style="display:none; position:fixed; top:70px; right:150px; width:210px; background:#131b2e; border:1px solid #00e5ff; border-radius:5px; padding:10px 12px; z-index:1000; box-shadow: 0 6px 20px rgba(0,0,0,0.7); color:#f0f4f8; font-size:0.75rem;">
             <div style="font-weight:bold; color:#00e5ff; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #1f2d4a; padding-bottom:4px;">
                 <span>⤩ Перемещение</span>
@@ -242,36 +177,52 @@
 
         <div id="selectionRect"></div>
 
+        <!-- КНОПКА И МОДАЛЬНОЕ ОКНО СПРАВКИ -->
         <button id="openHelpBtn" class="help-trigger-btn">?</button>
         <div id="helpModal">
             <div class="help-modal-content">
                 <div class="help-modal-header">
-                    <h2>📚 Справочник по управлению</h2>
+                    <h2>📚 Справочник GIDEON: Конструктор Сфиралей</h2>
                     <button class="help-close-btn" id="closeHelpBtn">✕</button>
                 </div>
                 <div class="help-modal-body" style="font-size:0.85rem; line-height:1.4;">
-                    <div class="help-section">
-                        <h3>🛠️ Управление и навигация</h3>
+                    
+                    <div class="help-section" style="margin-bottom: 12px; padding: 10px; background: rgba(0,229,255,0.05); border-left: 2px solid #00e5ff; border-radius: 4px;">
+                        <h3 style="color: #00e5ff; margin-bottom: 6px; font-size: 0.95rem;">🛠️ Навигация и Выделение</h3>
                         <p>
-                            • <b>Вращение камеры:</b> ПКМ или одним пальцем по пустому месту.<br>
-                            • <b>Режим выделения:</b> Кнопка «🔲 Рамка: ВЫКЛ/ВКЛ» переключает рамку выделения.<br>
-                            • <b>Магнитная доводка:</b> В обучении стрелки и дуги автоматически фиксируются на нужных значениях (180).<br>
-                            • <b>Автовыравнивание (🧲):</b> Убирает микро-дрейф углов и координат с допуском 0.3.
+                            • <b>Вращение камеры:</b> Левая кнопка мыши (ЛКМ) + тянуть.<br>
+                            • <b>Смещение (Пан):</b> Правая кнопка мыши (ПКМ) + тянуть.<br>
+                            • <b>Масштаб (Зум):</b> Колесико мыши.<br>
+                            • <b>Выбор:</b> Клик ЛКМ по объекту. Для множественного выбора зажмите <b>Shift</b> или <b>Ctrl</b>.<br>
+                            • <b>Режим рамки (🔲):</b> Включает выделение области свайпом/мышкой.
                         </p>
                     </div>
-                </div>
-            </div>
-        </div>
 
-        <!-- ====== ИНТЕРАКТИВНЫЙ ТУТОРИАЛ ====== -->
-        <div id="tutorialModal" class="mode-center">
-            <h3 id="tutTitle">👋 Шаг 1</h3>
-            <p id="tutText">
-                <span class="tutorial-arrow">⬇</span> Нажмите кнопку «➕», чтобы добавить первую сфираль.
-            </p>
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <span id="tutStep" style="font-size: 0.75rem; color: #ffaa00; font-weight: bold;">Ждем действия...</span>
-                <button id="tutSkipBtn" style="background: transparent; color: #88a0c0; border: none; font-size: 0.75rem; cursor: pointer; text-decoration: underline;">Закрыть</button>
+                    <div class="help-section" style="margin-bottom: 12px; padding: 10px; background: rgba(0,255,170,0.05); border-left: 2px solid #00ffaa; border-radius: 4px;">
+                        <h3 style="color: #00ffaa; margin-bottom: 6px; font-size: 0.95rem;">🏗️ Основные инструменты</h3>
+                        <p>
+                            • <b>➕ Добавить:</b> Создает новую сфираль в рабочей зоне.<br>
+                            • <b>📋 Копировать (Ctrl+C / Ctrl+V):</b> Клонирует выделенные узлы с сохранением связей.<br>
+                            • <b>🔗 Соединить:</b> Включает режим трассировки (кликните от красного выхода к зеленому входу).<br>
+                            • <b>🗑️ Удалить (Del):</b> Удаляет выбранные элементы.<br>
+                            • <b>↩️ Отменить (Ctrl+Z):</b> Шаг назад (Undo).<br>
+                            • <b>↪️ Вернуть (Ctrl+Y):</b> Повтор отмененного действия (Redo).<br>
+                            • <b>🎯 Центрировать:</b> Переносит выделенную группу точно в центр сцены (0, 0, 0).<br>
+                            • <b>🧲 Магнит (Snap):</b> Выравнивает микро-сдвиги углов и координат строго по сетке (шаг 90°).
+                        </p>
+                    </div>
+
+                    <div class="help-section" style="padding: 10px; background: rgba(255,170,0,0.05); border-left: 2px solid #ffaa00; border-radius: 4px;">
+                        <h3 style="color: #ffaa00; margin-bottom: 6px; font-size: 0.95rem;">⚙️ Квантовые вентили (Свойства)</h3>
+                        <p>
+                            • <b>SWAP (Синий):</b> Маршрутизатор потоков (базовое состояние).<br>
+                            • <b>READ (Желтый):</b> Датчик считывания (устанавливает 100% интенсивность).<br>
+                            • <b>SCALE (Красный):</b> Ручной корректор масштаба и натяжения (Stretch).<br>
+                            • <b>RST (Зеленый):</b> Инициализатор — полный сброс параметров узла.
+                        </p>
+                    </div>
+
+                </div>
             </div>
         </div>
 
@@ -279,6 +230,55 @@
 </div>
 
 <script>
+    // ========================================================
+    // ТОПОЛОГИЧЕСКИЙ ШИФР ОТТЕНДОРФА (Нужен для корректной работы editor.js)
+    // ========================================================
+    class OttendorfFractalAddressing {
+        constructor(baseScale = 140.0) {
+            this.baseScale = baseScale;
+        }
+
+        encodeRecursiveAddress(nodeId, x, y, z, depth = 2) {
+            const macroSector = Math.abs(x) >= Math.abs(y) ? (x > 0 ? 'R' : 'L') : 'S';
+            let currentSegments = [];
+            let currentScale = this.baseScale;
+
+            let cx = x, cy = y, cz = z;
+            for (let d = 1; d <= depth; d++) {
+                currentScale *= 0.5;
+                let fx = Math.floor((cx / currentScale) + 2) % 2;
+                let fy = Math.floor((cy / currentScale) + 2) % 2;
+                let fz = Math.floor((cz / currentScale) + 2) % 2;
+                currentSegments.push(`${fx}${fy}${fz}`);
+                
+                cx = (cx % currentScale);
+                cy = (cy % currentScale);
+                cz = (cz % currentScale);
+            }
+
+            const subcode = currentSegments.join('.');
+            return { id: nodeId, address: `SF-${macroSector}-${subcode}`, depth: depth, scale: currentScale };
+        }
+    }
+    window.ottendorfCoder = new OttendorfFractalAddressing(140.0);
+    window.logOttendorfSelection = function(node) {
+        if (!node) return;
+        const info = window.ottendorfCoder.encodeRecursiveAddress(node.id, node.x || 0, node.y || 0, node.z || 0, 2);
+        const consoleEl = document.getElementById('console');
+        if (consoleEl) {
+            consoleEl.style.display = 'block';
+            consoleEl.innerHTML += `
+                <div class="line" style="border-left: 3px solid #ffaa00; padding-left: 6px; margin-top: 4px;">
+                    🔍 <b>[OTTENDORF]</b> ID: <b>${node.id}</b> | Адрес: <span style="color:#00ffaa;">${info.address}</span>
+                </div>
+            `;
+            consoleEl.scrollTop = consoleEl.scrollHeight;
+        }
+    };
+
+    // ========================================================
+    // ОБРАБОТЧИКИ ИНТЕРФЕЙСА
+    // ========================================================
     document.getElementById('openHelpBtn').addEventListener('click', () => document.getElementById('helpModal').classList.add('active'));
     document.getElementById('closeHelpBtn').addEventListener('click', () => document.getElementById('helpModal').classList.remove('active'));
     document.getElementById('helpModal').addEventListener('click', (e) => {
@@ -310,311 +310,6 @@
         } else {
             boxBtn.classList.remove('active');
             boxBtn.textContent = '🔲 Рамка: ВЫКЛ';
-        }
-    });
-
-    // ==========================================
-    // ФУНКЦИЯ АВТОВОТВРАВНИВАНИЯ (СНАППИНГА)
-    // ==========================================
-    window.snapSelectedObjects = function(tolerance = 0.3) {
-        // Поддерживаем разные варианты хранения выделения в редакторе
-        const selection = window.selectedObjects || window.selectedNodes || (window.selectedObject ? [window.selectedObject] : []);
-        
-        if (!selection || selection.length === 0) {
-            console.log("Нет выделенных объектов для выравнивания.");
-            if (typeof showConsoleMessage === 'function') {
-                showConsoleMessage("⚠️ Нет выделенных объектов");
-            }
-            return;
-        }
-
-        let count = 0;
-        selection.forEach(obj => {
-            if (!obj) return;
-
-            // 1. Выравнивание вращения (в радианах по Three.js)
-            ['x', 'y', 'z'].forEach(axis => {
-                let currentDeg = obj.rotation[axis] * (180 / Math.PI);
-                let targetDeg = Math.round(currentDeg / 90) * 90; // Ближайший угол кратный 90°
-                
-                if (Math.abs(currentDeg - targetDeg) <= tolerance) {
-                    obj.rotation[axis] = targetDeg * (Math.PI / 180);
-                    count++;
-                }
-            });
-
-            // 2. Выравнивание координат позиции (шаг сетки)
-            ['x', 'y', 'z'].forEach(axis => {
-                let currentPos = obj.position[axis];
-                let targetPos = Math.round(currentPos);
-                
-                if (Math.abs(currentPos - targetPos) <= tolerance) {
-                    obj.position[axis] = targetPos;
-                    count++;
-                }
-            });
-        });
-
-        // Обновляем сцену / рендер, если есть глобальные функции
-        if (typeof updateScene === 'function') updateScene();
-        if (typeof render === 'function') render();
-        
-        console.log(`🧲 Автовыравнивание применено с допуском ${tolerance}. Скорректировано параметров: ${count}`);
-    };
-
-    // Привязываем клик к кнопке выравнивания
-    document.getElementById('snapObjectsBtn').addEventListener('click', () => {
-        window.snapSelectedObjects(0.3); // Порог по умолчанию 0.3 (внутри диапазона 0.1-0.5)
-    });
-
-    // ==========================================
-    // ПАЙПЛАЙН ОБУЧЕНИЯ С МАГНИТНОЙ ФИКСАЦИЕЙ (SNAP)
-    // ==========================================
-    const tutorialMissions = [
-        {
-            title: "➕ Шаг 1: Первая сфираль",
-            text: '<span class="tutorial-arrow">⬆</span> Нажмите подсвеченную кнопку «➕», чтобы создать элемент.',
-            check: () => window.tutorialTriggerAdd === true,
-            allowedId: 'addNodeBtn'
-        },
-        {
-            title: "🔲 Шаг 2: Режим рамки",
-            text: '<span class="tutorial-arrow">↖</span> Кликните по подсвеченной кнопке <b>«🔲 Рамка: ВЫКЛ»</b> для включения режима выделения.',
-            check: () => window.tutorialTriggerBox === true,
-            allowedId: 'boxSelectToggleBtn'
-        },
-        {
-            title: "📋 Шаг 3: Копирование",
-            text: '<span class="tutorial-arrow">⬆</span> Нажмите подсвеченную кнопку копирования <b>📋</b>.',
-            check: () => window.tutorialTriggerCopy === true,
-            allowedId: 'copyGroupBtn'
-        },
-        {
-            title: "↕ Шаг 4: Сдвиг по синей оси (Z)",
-            text: '<span class="tutorial-arrow">⬆</span> Потяните за <b>синюю стрелку (Z)</b> манипулятора. При приближении к <b>180</b> сработает магнитная фиксация, и значение установится автоматически!',
-            check: () => window.tutorialTriggerTranslateZ === true,
-            allowedId: 'toolTranslateBtn',
-            isSnapZ: true 
-        },
-        {
-            title: "🔄 Шаг 5: Поворот по оси X на 180°",
-            text: '<span class="tutorial-arrow">↗</span> Потяните за <b>красную дугу (X)</b> на объекте. При повороте на угол около <b>180°</b> сработает автофиксация!',
-            check: () => window.tutorialTriggerRotateX === true,
-            allowedId: 'toolRotateBtn',
-            isSnapRotX: true 
-        },
-        {
-            title: "🔗 Шаг 6: Соединение в цепь",
-            text: '<span class="tutorial-arrow">⬆</span> Выделите объекты рамкой и нажмите кнопку соединения <b>🔗</b>.',
-            check: () => window.tutorialTriggerConnect === true,
-            allowedId: 'connectBtn'
-        },
-        {
-            title: "🎯 Шаг 7: Центрирование цепочки",
-            text: '<span class="tutorial-arrow">⬆</span> Нажмите подсвеченную кнопку <b>🎯</b>, чтобы перенести собранную цепочку в центр сцены (0,0,0).',
-            check: () => window.tutorialTriggerCenter === true,
-            allowedId: 'toolCenterBtn'
-        },
-        {
-            title: "🚀 Обучение пройдено!",
-            text: "Великолепно! Цепочка собрана и отцентрирована. Нажмите здесь, чтобы завершить обучение.",
-            isFinal: true
-        }
-    ];
-
-    let currentMissionIdx = 0;
-    let autoCornerTimer = null;
-    const tutModal = document.getElementById('tutorialModal');
-    const tutTitle = document.getElementById('tutTitle');
-    const tutText = document.getElementById('tutText');
-    const tutStep = document.getElementById('tutStep');
-    const tutSkipBtn = document.getElementById('tutSkipBtn');
-
-    tutModal.style.display = 'block';
-    updateMissionUI();
-    startMissionWatcher();
-
-    tutModal.addEventListener('click', (e) => {
-        if (tutModal.classList.contains('mode-center')) {
-            if (autoCornerTimer) clearTimeout(autoCornerTimer);
-            tutModal.classList.remove('mode-center');
-            tutModal.classList.add('mode-corner');
-        }
-        if (tutorialMissions[currentMissionIdx].isFinal && e.target === tutSkipBtn) {
-            document.querySelectorAll('.tutorial-highlight').forEach(el => el.classList.remove('tutorial-highlight'));
-            tutModal.style.display = 'none';
-        }
-    });
-
-    function updateMissionUI() {
-        document.querySelectorAll('.tutorial-highlight').forEach(el => el.classList.remove('tutorial-highlight'));
-
-        const m = tutorialMissions[currentMissionIdx];
-        tutTitle.textContent = m.title;
-        tutText.innerHTML = m.text;
-
-        tutModal.classList.remove('mode-corner');
-        tutModal.classList.add('mode-center');
-
-        if (autoCornerTimer) clearTimeout(autoCornerTimer);
-        autoCornerTimer = setTimeout(() => {
-            if (tutModal.classList.contains('mode-center')) {
-                tutModal.classList.remove('mode-center');
-                tutModal.classList.add('mode-corner');
-            }
-        }, 6000);
-
-        if (m.isFinal) {
-            tutStep.textContent = "Нажмите для завершения";
-            tutSkipBtn.textContent = "Готово ✖";
-        } else {
-            tutStep.textContent = `Шаг ${currentMissionIdx + 1} из ${tutorialMissions.length - 1} (выполните задачу)`;
-            if (m.allowedId) {
-                const targetEl = document.getElementById(m.allowedId);
-                if (targetEl) targetEl.classList.add('tutorial-highlight');
-            }
-        }
-    }
-
-    function startMissionWatcher() {
-        const interval = setInterval(() => {
-            if (tutModal.style.display === 'none') {
-                clearInterval(interval);
-                return;
-            }
-
-            const m = tutorialMissions[currentMissionIdx];
-            if (m && m.isSnapZ) {
-                const zInput = document.getElementById('modalPosZ');
-                if (zInput) {
-                    let val = parseFloat(zInput.value);
-                    if (!isNaN(val) && val > 130 && val < 230) {
-                        zInput.value = 180;
-                        zInput.dispatchEvent(new Event('input'));
-                        window.tutorialTriggerTranslateZ = true;
-                    }
-                }
-            }
-            if (m && m.isSnapRotX) {
-                const rotXInput = document.getElementById('modalRotX');
-                if (rotXInput) {
-                    let val = parseFloat(rotXInput.value);
-                    if (!isNaN(val) && val > 130 && val < 230) {
-                        rotXInput.value = 180;
-                        rotXInput.dispatchEvent(new Event('input'));
-                        window.tutorialTriggerRotateX = true;
-                    }
-                }
-            }
-
-            if (m && m.check && m.check()) {
-                currentMissionIdx++;
-                if (currentMissionIdx < tutorialMissions.length) {
-                    updateMissionUI();
-                } else {
-                    document.querySelectorAll('.tutorial-highlight').forEach(el => el.classList.remove('tutorial-highlight'));
-                    clearInterval(interval);
-                }
-            }
-        }, 200);
-    }
-
-    tutSkipBtn.addEventListener('click', () => {
-        if (autoCornerTimer) clearTimeout(autoCornerTimer);
-        document.querySelectorAll('.tutorial-highlight').forEach(el => el.classList.remove('tutorial-highlight'));
-        tutModal.style.display = 'none';
-    });
-
-    function guardAction(e, actionName) {
-        if (tutModal.style.display === 'none') return true;
-        const currentM = tutorialMissions[currentMissionIdx];
-        if (currentM.isFinal) return true;
-
-        if (e.currentTarget.id === currentM.allowedId || actionName === 'safe') {
-            return true;
-        }
-
-        e.preventDefault();
-        e.stopPropagation();
-        if (tutModal.classList.contains('mode-center')) {
-            if (autoCornerTimer) clearTimeout(autoCornerTimer);
-            tutModal.classList.remove('mode-center');
-            tutModal.classList.add('mode-corner');
-        }
-        return false;
-    }
-
-    document.getElementById('addNodeBtn').addEventListener('click', (e) => {
-        if (guardAction(e)) window.tutorialTriggerAdd = true;
-    });
-
-    document.getElementById('boxSelectToggleBtn').addEventListener('click', (e) => {
-        if (guardAction(e)) window.tutorialTriggerBox = true;
-    });
-
-    document.getElementById('copyGroupBtn').addEventListener('click', (e) => {
-        if (guardAction(e)) window.tutorialTriggerCopy = true;
-    });
-
-    document.getElementById('modalPosZ').addEventListener('input', () => {
-        const val = parseFloat(document.getElementById('modalPosZ').value);
-        if (!isNaN(val) && Math.abs(val - 180) < 30) {
-            document.getElementById('modalPosZ').value = 180;
-            window.tutorialTriggerTranslateZ = true;
-        }
-    });
-    document.getElementById('toolTranslateBtn').addEventListener('click', (e) => {
-        if (guardAction(e)) {
-            const zInput = document.getElementById('modalPosZ');
-            if (zInput && parseFloat(zInput.value) === 0) {
-                zInput.value = 180;
-                zInput.dispatchEvent(new Event('input'));
-                window.tutorialTriggerTranslateZ = true;
-            }
-        }
-    });
-
-    document.getElementById('modalRotX').addEventListener('input', () => {
-        const val = parseFloat(document.getElementById('modalRotX5') || document.getElementById('modalRotX').value); // fallback safe
-        if (!isNaN(val) && Math.abs(val - 180) < 30) {
-            document.getElementById('modalRotX').value = 180;
-            window.tutorialTriggerRotateX = true;
-        }
-    });
-    document.getElementById('toolRotateBtn').addEventListener('click', (e) => {
-        if (guardAction(e)) {
-            const xInput = document.getElementById('modalRotX');
-            if (xInput && parseFloat(xInput.value) === 0) {
-                xInput.value = 180;
-                xInput.dispatchEvent(new Event('input'));
-                window.tutorialTriggerRotateX = true;
-            }
-        }
-    });
-
-    document.getElementById('connectBtn').addEventListener('click', (e) => {
-        if (guardAction(e)) window.tutorialTriggerConnect = true;
-    });
-
-    document.getElementById('toolCenterBtn').addEventListener('click', (e) => {
-        if (guardAction(e)) window.tutorialTriggerCenter = true;
-    });
-
-    ['deleteBtn', 'gateRouter', 'gateReadout', 'gateScaleControl', 'gateReset', 'fractalPresetBtn'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) {
-            el.addEventListener('click', (e) => {
-                if (tutModal.style.display !== 'none' && !tutorialMissions[currentMissionIdx].isFinal) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    if (tutModal.classList.contains('mode-center')) {
-                        if (autoCornerTimer) clearTimeout(autoCornerTimer);
-                        tutModal.classList.remove('mode-center');
-                        tutModal.classList.add('mode-corner');
-                    }
-                    alert("⚠️ Инструмент заблокирован на время обучения. Следуйте подсказке!");
-                }
-            }, true);
         }
     });
 </script>

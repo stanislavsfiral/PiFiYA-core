@@ -5,6 +5,61 @@ import { generateRightBranch, TernarySpatialWalshEngine } from './FractalBuilder
 import { computeQuantumNetwork } from '../core/GideonMath.js';
 
 // ============================================================
+// ТОПОЛОГИЧЕСКИЙ ШИФР ОТТЕНДОРФА: РЕКУРСИВНО-ФРАКТАЛЬНАЯ АДРЕСАЦИЯ
+// ============================================================
+class OttendorfFractalAddressing {
+    constructor(baseScale = 140.0) {
+        this.baseScale = baseScale;
+    }
+
+    encodeRecursiveAddress(nodeId, x, y, z, depth = 2) {
+        const macroSector = Math.abs(x) >= Math.abs(y) ? (x > 0 ? 'R' : 'L') : 'S';
+        let currentSegments = [];
+        let currentScale = this.baseScale;
+
+        let cx = x, cy = y, cz = z;
+        for (let d = 1; d <= depth; d++) {
+            currentScale *= 0.5;
+            let fx = Math.floor((cx / currentScale) + 2) % 2;
+            let fy = Math.floor((cy / currentScale) + 2) % 2;
+            let fz = Math.floor((cz / currentScale) + 2) % 2;
+            currentSegments.push(`${fx}${fy}${fz}`);
+            
+            cx = (cx % currentScale);
+            cy = (cy % currentScale);
+            cz = (cz % currentScale);
+        }
+
+        const subcode = currentSegments.join('.');
+        return {
+            id: nodeId,
+            address: `SF-${macroSector}-${subcode}`,
+            depth: depth,
+            scale: currentScale
+        };
+    }
+}
+const ottendorfCoder = new OttendorfFractalAddressing(140.0);
+
+// Глобальная функция логирования выбора сфирали в консоль конструктора
+window.logOttendorfSelection = function(node) {
+    if (!node) return;
+    const info = ottendorfCoder.encodeRecursiveAddress(node.id, node.x || 0, node.y || 0, node.z || 0, 2);
+    const consoleEl = document.getElementById('console');
+    if (consoleEl) {
+        consoleEl.style.display = 'block';
+        consoleEl.innerHTML += `
+            <div class="line" style="border-left: 3px solid #ffaa00; padding-left: 6px; margin-top: 4px;">
+                🔍 <b>[OTTENDORF FOCUS]</b> Выбрана вложенная Сфираль ID: <b>${node.id}</b><br>
+                &nbsp;&nbsp;• Фрактальный адрес: <span style="color:#00ffaa;">${info.address}</span><br>
+                &nbsp;&nbsp;• Масштаб подуровня: ${info.scale} | Глубина: ${info.depth}
+            </div>
+        `;
+        consoleEl.scrollTop = consoleEl.scrollHeight;
+    }
+};
+
+// ============================================================
 // 1. СОСТОЯНИЕ ПРИЛОЖЕНИЯ И ЛОГИРОВАНИЕ ИСТОРИИ ДЕЙСТВИЙ (AI TRAINING)
 // ============================================================
 let graph = { nodes: [], edges: [] };
@@ -16,7 +71,6 @@ const MAX_UNDO = 30;
 let clipboard = null;
 let pythonTimeout = null;
 
-// Состояние режима ручной трассировки портов
 let isWiringMode = false;
 let wiringSource = null;
 let interactivePorts = [];
@@ -83,6 +137,14 @@ function addNode(mode, x, y, z, params) {
             target_len: params?.target_len || 1000,
             scale: params?.scale !== undefined ? params.scale : 1.0,
             stretch: params?.stretch !== undefined ? params.stretch : 1.0,
+            
+            // --- НОВЫЕ МАРКЕРЫ ДЛЯ ВИЗУАЛИЗАТОРА ---
+            radius: 140, 
+            length: 190, 
+            isCustomScaled: params?.isCustomScaled || false,
+            isGroupScaled: params?.isGroupScaled || false,
+            // ----------------------------------------
+            
             angles: params?.angles ? [...params.angles] : [0, 0, 0],
             activeGate: params?.activeGate || 'ROUTER_SWAP',
             showRight: params?.showRight !== undefined ? params.showRight : true,
@@ -261,7 +323,6 @@ controls.target.set(0, 0, 0);
 controls.screenSpacePanning = true;
 controls.update();
 
-// UX UPDATE: Левая кнопка вращает камеру
 controls.mouseButtons = {
     LEFT: THREE.MOUSE.ROTATE,
     MIDDLE: THREE.MOUSE.DOLLY,
@@ -423,7 +484,7 @@ function applySubScale(pts, subParams, stretch = 1.0) {
 function createSfiralGroup(node) {
     const group = new THREE.Group();
     if (!node.params) {
-        node.params = { scale: 1.0, stretch: 1.0, N: 5, angles: [0,0,0], showRight: true, showS: true, showLeft: true, showSLeft: true };
+        node.params = { scale: 1.0, stretch: 1.0, N: 5, angles: [0,0,0], showRight: true, showS: true, showLeft: true, showSLeft: true, radius: 140, length: 190 };
     }
     const nodeScale = node.params.scale !== undefined ? node.params.scale : 1.0;
     const stretch = node.params.stretch !== undefined ? node.params.stretch : 1.0;
@@ -481,8 +542,8 @@ function createSfiralGroup(node) {
     group.rotation.y = THREE.MathUtils.degToRad(angles[1]);
     group.rotation.z = THREE.MathUtils.degToRad(angles[2]);
 
-    node.entryPoint = rightPts.length > 0 ? rightPts[0].clone() : new THREE.Vector3(0, 0, 0);
-    node.exitPoint = leftPts.length > 0 ? leftPts[0].clone() : new THREE.Vector3(0, 0, 0);
+    node.entryPoint = rightPts.length > 0 ? rightPts[0].clone().multiplyScalar(nodeScale) : new THREE.Vector3(0, 0, 0);
+    node.exitPoint = leftPts.length > 0 ? leftPts[0].clone().multiplyScalar(nodeScale) : new THREE.Vector3(0, 0, 0);
 
     group.userData.nodeId = node.id;
     return group;
@@ -932,7 +993,7 @@ function switchView(view) {
 }
 
 // ============================================================
-// 8. БУФЕР ОБМЕНА
+// 8. БУФЕР ОБМЕНА И ИСТОРИЯ ДЕЙСТВИЙ
 // ============================================================
 function saveState() {
     const state = {
@@ -940,6 +1001,10 @@ function saveState() {
             ...n,
             params: {
                 ...(n.params || {}),
+                radius: 140,
+                length: 190,
+                isCustomScaled: n.params?.isCustomScaled || false,
+                isGroupScaled: n.params?.isGroupScaled || false,
                 angles: n.params?.angles ? [...n.params.angles] : [0,0,0],
                 rightSub: n.params?.rightSub ? { ...n.params.rightSub } : { height: 100 },
                 leftSub: n.params?.leftSub ? { ...n.params.leftSub } : { height: 100 },
@@ -952,6 +1017,51 @@ function saveState() {
     undoStack.push(JSON.stringify(state));
     if (undoStack.length > MAX_UNDO) undoStack.shift();
     redoStack = [];
+}
+
+function restoreState(state) {
+    // Глубокое копирование восстанавливаемого состояния
+    graph.nodes = state.nodes.map(n => JSON.parse(JSON.stringify(n)));
+    graph.edges = state.edges.map(e => JSON.parse(JSON.stringify(e)));
+    
+    // Восстанавливаем счетчик ID, чтобы новые узлы не конфликтовали
+    let maxId = 0;
+    graph.nodes.forEach(n => { if (n.id > maxId) maxId = n.id; });
+    nextId = maxId + 1;
+
+    // Полное обновление сцены и UI
+    updateAllNodes();
+    selectedNodes = [];
+    selectedPart = null;
+    transformControls.detach();
+    renderProperties(null);
+    sendDataToPythonCore(true);
+}
+
+function undo() {
+    if (undoStack.length === 0) return;
+    
+    // Сохраняем текущее состояние в стек Redo перед откатом
+    const currentState = { nodes: graph.nodes, edges: graph.edges };
+    redoStack.push(JSON.stringify(currentState));
+    
+    // Извлекаем предыдущее состояние и применяем
+    const prevState = JSON.parse(undoStack.pop());
+    restoreState(prevState);
+    logAction('UNDO', { remaining: undoStack.length });
+}
+
+function redo() {
+    if (redoStack.length === 0) return;
+    
+    // Сохраняем текущее состояние в стек Undo перед возвратом
+    const currentState = { nodes: graph.nodes, edges: graph.edges };
+    undoStack.push(JSON.stringify(currentState));
+    
+    // Извлекаем следующее состояние и применяем
+    const nextState = JSON.parse(redoStack.pop());
+    restoreState(nextState);
+    logAction('REDO', { remaining: redoStack.length });
 }
 
 function copySelected() {
@@ -982,6 +1092,8 @@ function pasteClipboard() {
             target_len: p.target_len,
             scale: p.scale,
             stretch: p.stretch,
+            isCustomScaled: p.isCustomScaled,
+            isGroupScaled: p.isGroupScaled,
             angles: p.angles ? [...p.angles] : [0,0,0],
             activeGate: p.activeGate,
             showRight: p.showRight,
@@ -1029,6 +1141,7 @@ function applyScaleAndStretchToNodes(nodeIds, newScale, newStretch) {
         if (!node.params) node.params = {};
         
         if (nodeIds.length > 1) {
+            node.params.isGroupScaled = true; // <--- МАРКЕР ИЗМЕНЕНИЯ ГРУППЫ
             if (newScale !== undefined && oldScale > 0) {
                 const scaleRatio = newScale / oldScale;
                 node.x = cx + (node.x - cx) * scaleRatio;
@@ -1043,9 +1156,12 @@ function applyScaleAndStretchToNodes(nodeIds, newScale, newStretch) {
                 node.params.stretch = newStretch;
             }
         } else {
+            node.params.isGroupScaled = false;
             if (newScale !== undefined) node.params.scale = newScale;
             if (newStretch !== undefined) node.params.stretch = newStretch;
         }
+
+        node.params.isCustomScaled = true; // <--- МАРКЕР ФИЗИЧЕСКОГО СЖАТИЯ
 
         updateNodeVisual(node);
     });
@@ -1069,6 +1185,11 @@ class UIManager {
         const rotBtn = document.getElementById('toolRotateBtn');
         const centerBtn = document.getElementById('toolCenterBtn');
         const snapBtn = document.getElementById('snapObjectsBtn');
+
+        // --- ПРИВЯЗКА КНОПОК ОТКАТА ---
+        document.getElementById('toolUndoBtn')?.addEventListener('click', undo);
+        document.getElementById('toolRedoBtn')?.addEventListener('click', redo);
+        // ------------------------------
 
         if (transBtn) {
             transBtn.classList.add('active');
@@ -1145,6 +1266,7 @@ class UIManager {
                     node.params.activeGate = 'SCALE_CORRECTOR';
                     const currentStretch = node.params.stretch !== undefined ? node.params.stretch : 1.0;
                     node.params.stretch = Math.max(0.1, Math.min(5.0, Number((currentStretch + step).toFixed(1))));
+                    node.params.isCustomScaled = true;
                     updateNodeVisual(node);
                 }
             } else {
@@ -1166,7 +1288,8 @@ class UIManager {
                     if (!node.params) node.params = {};
                     node.params.activeGate = 'RESET';
                     node.params.showRight = true; node.params.showLeft = true;
-                    node.params.stretch = 1.0; node.quantumState.intensity = 0;
+                    node.params.stretch = 1.0; node.params.isCustomScaled = false; node.params.isGroupScaled = false;
+                    node.quantumState.intensity = 0;
                     updateNodeVisual(node);
                 }
             });
@@ -1413,6 +1536,11 @@ class UIManager {
                     }
                     updateSelectionHighlights();
                     renderProperties(selectedNodes.length === 1 ? selectedNodes[0] : null);
+
+                    if (selectedNodes.length === 1 && typeof window.logOttendorfSelection === 'function') {
+                        window.logOttendorfSelection(getNode(selectedNodes[0]));
+                    }
+
                 } else {
                     if (!transformControls.dragging && !e.ctrlKey && !e.shiftKey) {
                         selectedNodes = [];
@@ -1462,7 +1590,16 @@ class UIManager {
                 }
             }
 
-            if (e.ctrlKey && key === 'c') { e.preventDefault(); copySelected(); }
+            if (e.ctrlKey && key === 'z') {
+                e.preventDefault();
+                if (e.shiftKey) redo(); 
+                else undo();            
+            }
+            else if (e.ctrlKey && key === 'y') {
+                e.preventDefault();
+                redo();                 
+            }
+            else if (e.ctrlKey && key === 'c') { e.preventDefault(); copySelected(); }
             else if (e.ctrlKey && key === 'v') { e.preventDefault(); pasteClipboard(); }
             else if (e.key === 'Delete' || e.key === 'Del') { e.preventDefault(); deleteSelected(); }
             else if (e.key === 'Escape') {
@@ -1565,7 +1702,7 @@ function applyModalRotationLive() {
             if (!group) return;
             const v = new THREE.Vector3(node.x, node.y, node.z).sub(new THREE.Vector3(cx, cy, cz));
             v.applyQuaternion(quatDelta);
-            v.add(new THREE.Vector3(cx, cy, cy)); // Keep Y logic simple
+            v.add(new THREE.Vector3(cx, cy, cy));
             node.x = v.x; node.y = v.y; node.z = v.z;
 
             group.rotation.setFromQuaternion(group.quaternion.premultiply(quatDelta));
@@ -1611,11 +1748,33 @@ function openRotateDialog() {
 function addNodeHandler() {
     saveState();
     let nextX = 0, nextZ = 0;
+    let currentScale = 1.0;
+    let currentStretch = 1.0;
+    let currentN = 5;
+
     if (graph.nodes.length > 0) {
         const lastNode = graph.nodes[graph.nodes.length - 1];
-        nextX = lastNode.x - 140; nextZ = lastNode.z - 180;
+        currentScale = lastNode.params?.scale ?? 1.0;
+        currentStretch = lastNode.params?.stretch ?? 1.0;
+        currentN = lastNode.params?.N ?? 5;
+
+        const stepX = (60 + currentN * 2) * 2 * currentScale; 
+        const stepZ = (80 + currentN * 2) * 2 * currentScale * currentStretch;
+
+        nextX = lastNode.x - stepX;
+        nextZ = lastNode.z - stepZ;
     }
-    const node = addNode('Single', nextX, 0, nextZ, { N: 5, target_len: 1000, scale: 1.0, stretch: 1.0, angles: [0, 0, 0], activeGate: 'ROUTER_SWAP' });
+    
+    const node = addNode('Single', nextX, 0, nextZ, { 
+        N: currentN, 
+        target_len: 1000, 
+        scale: currentScale, 
+        stretch: currentStretch, 
+        isCustomScaled: (currentScale !== 1.0 || currentStretch !== 1.0),
+        angles: [0, 0, 0], 
+        activeGate: 'ROUTER_SWAP' 
+    });
+    
     updateNodeVisual(node); updateEdges(); updateStats(); updateWiringPorts();
     selectedNodes = [node.id]; selectedPart = null;
     updateSelectionHighlights(); renderProperties(node.id); sendDataToPythonCore(true);
@@ -1654,8 +1813,22 @@ function deleteSelected() {
 function buildFractalComposition() {
     saveState();
     graph.nodes = []; graph.edges = []; nextId = 1;
-    const n1 = addNode('Single', 0, 0, 0, { N: 5, target_len: 1000, scale: 1.0, stretch: 1.0, angles: [0, 0, 0], activeGate: 'ROUTER_SWAP' });
-    const n2 = addNode('Single', -140, 0, -180, { N: 5, target_len: 1000, scale: 1.0, stretch: 1.0, angles: [0, 0, 0], activeGate: 'ROUTER_SWAP' });
+    
+    const baseScale = 1.0;
+    const baseStretch = 1.0;
+    const baseN = 5; 
+    
+    const stepX = (60 + baseN * 2) * 2 * baseScale;
+    const stepZ = (80 + baseN * 2) * 2 * baseScale * baseStretch;
+
+    const n1 = addNode('Single', 0, 0, 0, { 
+        N: baseN, target_len: 1000, scale: baseScale, stretch: baseStretch, isCustomScaled: false, angles: [0, 0, 0], activeGate: 'ROUTER_SWAP' 
+    });
+    
+    const n2 = addNode('Single', -stepX, 0, -stepZ, { 
+        N: baseN, target_len: 1000, scale: baseScale, stretch: baseStretch, isCustomScaled: false, angles: [0, 0, 0], activeGate: 'ROUTER_SWAP' 
+    });
+    
     addEdge(n1.id, n2.id, 1.0, 'right_polarization');
     updateAllNodes(); selectedNodes = [n1.id]; selectedPart = null;
     updateSelectionHighlights(); renderProperties(n1.id); 
@@ -1706,6 +1879,10 @@ function loadModel(e) {
                         target_len: 1000,
                         scale: item.scale || 1.0,
                         stretch: item.stretch || 1.0,
+                        radius: item.radius || 140,
+                        length: item.length || 190,
+                        isCustomScaled: item.isCustomScaled || false,
+                        isGroupScaled: item.isGroupScaled || false,
                         angles: item.angles || [0, 0, 0],
                         activeGate: 'ROUTER_SWAP',
                         showRight: true, showS: true, showLeft: true, showSLeft: true,
@@ -1733,6 +1910,10 @@ function loadModel(e) {
                         target_len: n.params?.target_len || 1000,
                         scale: n.params?.scale ?? 1.0,
                         stretch: n.params?.stretch ?? 1.0,
+                        radius: n.params?.radius || 140,
+                        length: n.params?.length || 190,
+                        isCustomScaled: n.params?.isCustomScaled || false,
+                        isGroupScaled: n.params?.isGroupScaled || false,
                         angles: n.params?.angles ? [...n.params.angles] : [0, 0, 0],
                         activeGate: n.params?.activeGate || 'ROUTER_SWAP',
                         showRight: n.params?.showRight !== undefined ? n.params.showRight : true,
