@@ -9,6 +9,7 @@ let scene, camera, renderer, controls, spiralGroup;
 let core = new GideonWebCore();
 let globalNodesData = {}; 
 let selectedNodeIds = []; 
+let isFirstLoad = true; // Флаг для первоначальной настройки камеры
 
 // ========================================================
 // ТОПОЛОГИЧЕСКИЙ ШИФР ОТТЕНДОРФА
@@ -65,6 +66,7 @@ function init3D() {
     scene = new THREE.Scene();
     
     camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 1, 8000);
+    // Первоначальная установка камеры
     camera.position.set(600, 450, 700);
 
     renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('renderCanvas'), antialias: true });
@@ -373,19 +375,16 @@ function updateScene() {
         const box = new THREE.Box3().setFromObject(spiralGroup);
         const center = new THREE.Vector3();
         box.getCenter(center);
+        
+        // Убрали сброс камеры, теперь фокус меняется плавно только если это нужно,
+        // но сама камера не прыгает.
         controls.target.copy(center);
-        camera.position.set(center.x + 600, center.y + 450, center.z + 700);
-        controls.update();
 
         computeQuantumState(customModelSource.nodes, customModelSource.edges);
 
     } else {
         document.getElementById('statusHeader').innerText = "STATUS: ACTIVE • Q-ZERO CHIRALITY";
         document.getElementById('resetModelBtn').style.display = customPoints ? 'block' : 'none';
-
-        controls.target.set(0, 0, 0);
-        camera.position.set(600, 450, 700);
-        controls.update();
 
         // Дефолтное отображение оставляем с прежними крупными габаритами
         let rawStruct = generateHalfPoints(140, 190);
@@ -513,6 +512,13 @@ document.getElementById('modelFileInput').addEventListener('change', (event) => 
                 customPoints = null;
             }
             document.getElementById('resetModelBtn').style.display = 'block';
+            
+            // Если загружена новая модель - сбрасываем камеру на центр
+            if (controls && customModelSource && customModelSource.nodes.length > 0) {
+                 controls.target.set(0, 0, 0);
+                 camera.position.set(600, 450, 700);
+            }
+            
             updateScene();
         } catch(err) { alert('Ошибка чтения файла: ' + err.message); }
     };
@@ -522,6 +528,13 @@ document.getElementById('modelFileInput').addEventListener('change', (event) => 
 document.getElementById('resetModelBtn').addEventListener('click', () => {
     customModelSource = null; customPoints = null;
     document.getElementById('resetModelBtn').style.display = 'none';
+    
+    // Возвращаем камеру в дефолт при сбросе
+    if (controls) {
+         controls.target.set(0, 0, 0);
+         camera.position.set(600, 450, 700);
+    }
+    
     updateScene();
 });
 
