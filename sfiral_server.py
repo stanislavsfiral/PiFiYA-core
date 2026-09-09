@@ -3,12 +3,26 @@ import json
 import os
 import numpy as np
 import time
+import requests
 from datetime import datetime
 
 PORT = 8000
 AI_MEMORY_DIR = "ai_memory"
 os.makedirs(AI_MEMORY_DIR, exist_ok=True)
 TIMELINE_LOG_FILE = os.path.join(AI_MEMORY_DIR, "ai_timeline_log.jsonl")
+
+# Точный путь к файлу локальной базы знаний с учетом его реального имени в папке
+FAQ_FILE_PATH = os.path.join("sfiral_docs", "sfiral_docsfaq_sfiral.txt")
+
+def load_local_faq():
+    """Считывает локальную базу знаний из файла, если он существует"""
+    if os.path.exists(FAQ_FILE_PATH):
+        try:
+            with open(FAQ_FILE_PATH, "r", encoding="utf-8") as f:
+                return f.read()
+        except Exception as e:
+            print(f"⚠️ Ошибка чтения FAQ файла: {e}")
+    return ""
 
 # ==========================================
 # ЯДРО ТРОИЧНОЙ ЛОГИКИ И КВАНТОВЫХ ВЕСОВ
@@ -74,9 +88,6 @@ class ModelMappedBingle:
         }
 
 class ModelMappedTringleNode:
-    """
-    Трингл, выросший прямо из загруженной модели (узла графа и его связей).
-    """
     def __init__(self, node_id, node_data, incoming_signal=None, depth=0, max_depth=2, threshold=0.15):
         self.node_id = node_id
         self.node_data = node_data
@@ -84,11 +95,9 @@ class ModelMappedTringleNode:
         self.max_depth = max_depth
         self.threshold = threshold
         
-        # Извлекаем параметры из реального узла модели (углы, гейты)
         params = node_data.get('params', {})
         angles = params.get('angles', [0, 0, 0])
         
-        # Тезис и антитезис формируются на основе пространственного поворота узла (Axis Y и Z)
         self.thesis = np.cos(np.radians(angles[1])) + (1.0 if incoming_signal is None else incoming_signal)
         self.antithesis = np.sin(np.radians(angles[2])) - 0.5
         
@@ -97,7 +106,6 @@ class ModelMappedTringleNode:
         self.is_resonant = False
 
     def evaluate_node(self, edges, all_nodes_map):
-        # S-инвертор: вычисление напряжения на основе геометрии модели
         tension = abs(self.thesis + self.antithesis)
         meaning = (self.thesis - self.antithesis) / 2.0
 
@@ -106,15 +114,12 @@ class ModelMappedTringleNode:
             self.is_resonant = True
             return self
 
-        # Если напряжение высокое, запускаем фрактальное «умно-жение» по связям графа (edges)
         if self.depth < self.max_depth:
             outgoing_edges = [e for e in edges if e['from'] == self.node_id]
-            
             for edge in outgoing_edges:
                 next_id = edge['to']
                 if next_id in all_nodes_map:
                     child_data = all_nodes_map[next_id]
-                    # Создаем дочерний трингл на основе связанного узла модели
                     child_node = ModelMappedTringleNode(
                         node_id=next_id,
                         node_data=child_data,
@@ -125,7 +130,6 @@ class ModelMappedTringleNode:
                     )
                     child_node.evaluate_node(edges, all_nodes_map)
                     self.children.append(child_node)
-                    
         return self
 
     def to_dict(self):
@@ -164,10 +168,42 @@ class SfiralComputeHandler(http.server.SimpleHTTPRequestHandler):
         
         try:
             req_data = json.loads(post_data.decode('utf-8'))
+            
+            # --- ИНТЕГРАЦИЯ ЛОКАЛЬНОГО ИИ С ЖЕСТКИМ ПОДГРУЗОМ FAQ ---
+            if self.path == '/api/ask_ai':
+                user_query = req_data.get('question', '')
+                
+                # Загружаем локальную базу знаний из правильного файла[cite: 9]
+                local_faq = load_local_faq()
+                
+                # Ультимативный промпт, требующий строгого цитирования базы знаний
+                prompt = (
+                    "ИНСТРУКЦИЯ: Пользователь задал вопрос о термине. Ты ДОЛЖЕН найти точный ответ на этот вопрос в тексте базы знаний ниже и выдать его дословно. Не придумывай никаких трактовок про сети, сферы или вышивания!\n\n"
+                    f"=== БАЗА ЗНАНИЙ ===\n"
+                    f"{local_faq}\n"
+                    f"===================\n\n"
+                    f"Вопрос пользователя: {user_query}\n"
+                    f"Точный ответ из базы знаний:"
+                )
+                
+                try:
+                    ai_resp = requests.post("http://localhost:11434/api/generate", json={
+                        "model": "deepseek-coder:1.3b",
+                        "prompt": prompt,
+                        "stream": False
+                    })
+                    ai_text = ai_resp.json().get("response", "Пустой ответ ИИ")
+                except Exception as e:
+                    ai_text = f"Ошибка связи с Ollama: {e}"
+                    
+                self._set_headers(200)
+                self.wfile.write(json.dumps({"answer": ai_text}, ensure_ascii=False).encode('utf-8'))
+                return
+            # ----------------------------------------
+            
             nodes = {n['id']: n for n in req_data.get('nodes', [])}
             edges = req_data.get('edges', [])
             
-            # Логируем сессию в AI Memory
             session_record = {
                 "timestamp": time.time(),
                 "model_name": req_data.get("model_name", "GIDEON-Model-Semantic"),
@@ -178,16 +214,12 @@ class SfiralComputeHandler(http.server.SimpleHTTPRequestHandler):
             with open(TIMELINE_LOG_FILE, "a", encoding="utf-8") as f:
                 f.write(json.dumps(session_record, ensure_ascii=False) + "\n")
 
-            # ====================================================
-            # СЕМАНТИЧЕСКИЙ АНАЛИЗ ЗАГРУЖЕННОЙ 3D-МОДЕЛИ
-            # ====================================================
             semantic_trees = []
             to_nodes = {e['to'] for e in edges}
             start_nodes = [nid for nid in nodes.keys() if nid not in to_nodes]
             if not start_nodes and nodes: 
                 start_nodes = [list(nodes.keys())[0]]
 
-            # Превращаем стартовые узлы модели в корневые Тринглы смыслов
             for start_id in start_nodes:
                 root_node = ModelMappedTringleNode(
                     node_id=start_id,
@@ -198,7 +230,6 @@ class SfiralComputeHandler(http.server.SimpleHTTPRequestHandler):
                 root_node.evaluate_node(edges, nodes)
                 semantic_trees.append(root_node.to_dict())
 
-            # Также считаем стандартный квантовый роутинг для отрисовки сигналов
             quantum_results_map = {}
             active_signals = {sid: SfiralQutrit(0, 0, 1) for sid in start_nodes}
             
@@ -243,10 +274,10 @@ class SfiralComputeHandler(http.server.SimpleHTTPRequestHandler):
 
         except Exception as e:
             self._set_headers(400)
-            self.wfile.write(json.dumps({"status": "error", "message": str(e)}).encode('utf-8'))
+            self.wfile.write(json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False).encode('utf-8'))
             print(f"❌ [Ошибка семантики модели]: {e}")
 
 if __name__ == "__main__":
     server = http.server.HTTPServer(('localhost', PORT), SfiralComputeHandler)
-    print(f"🚀 Ядро Сфирали (Связь Модели с Семантикой) активно: http://localhost:{PORT}")
+    print(f"🚀 Ядро Сфирали активно: http://localhost:{PORT}")
     server.serve_forever()
